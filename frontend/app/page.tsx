@@ -8,6 +8,7 @@ export default function VRScence() {
   const inventoryref = useRef(null);
   const keyref = useRef(null);
   const Doorref = useRef(null);
+  const landref = useRef(null);
   const [items, setItems] = useState([]);
   const itemsref = useRef([]);
   itemsref.current = items;
@@ -24,12 +25,23 @@ export default function VRScence() {
     let yaw = 0;
     let pitch = 0;
 
+    const GRAVITY = 30;
+    const STEP = 1;
+    const DOWN = new THREE.Vector3(0 , -1 , 0);
+    const groundRay = new THREE.Raycaster();
+    let vy = 0;
+    const JUMP = 12;
+    let onGround = false;
+
     const down = (e) => {
       keys[e.code] = true;
       if (e.code === 'KeyG' && inventoryref.current) inventoryref.current.style.display = 'grid';
       if (e.code === 'KeyE' && itemsref.current.includes('old_key')) {
         Doorref.current?.setAttribute('gltf-model' , '#celldoorModel');
         Doorref.current?.setAttribute('animation-mixer', 'loop: once; clampWhenFinished: true');
+      }
+      if(e.code === 'Space' && onGround) {
+        vy = JUMP;
       }
     };
     const up = (e) => {
@@ -83,9 +95,26 @@ export default function VRScence() {
       last = now;
 
       const el = walkref.current;
+      if (!el?.object3D) return;
+      const pos = el.object3D.position;
+      const land = landref.current?.getObject3D('mesh');
+      if (land) {
+        groundRay.set(new THREE.Vector3(pos.x, pos.y + STEP, pos.z), DOWN);
+        const hit = groundRay.intersectObject(land, true)[0];
+       if (hit && vy <= 0 && pos.y <= hit.point.y + 0.05) {
+        pos.y = hit.point.y;
+        vy = 0;
+        onGround = true;
+        } else {
+        vy -= GRAVITY * dt;
+        pos.y += vy * dt;
+        onGround = false;
+}
+      }
+
       const x = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
       const z = (keys.KeyS ? 1 : 0) - (keys.KeyW ? 1 : 0);
-      if (!el?.object3D || (!x && !z)) return;
+      if (!x && !z) return;
 
       const len = Math.sqrt(x**2 + z**2);
       const sin = Math.sin(yaw);
@@ -133,6 +162,7 @@ export default function VRScence() {
         </a-entity>
 
         <a-entity
+          ref={landref}
           gltf-model="#landModel"
           position="0 0 0"
           scale="1 1 1"
