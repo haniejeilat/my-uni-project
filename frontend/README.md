@@ -5,14 +5,23 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 First, run the development server:
 
 ```bash
+#frontend 
 npm run dev
 # or
-yarn dev
+bun run dev
+
+
 # or
-pnpm dev
+
+#backend
+bun run dev
 # or
-bun dev
+npm run dev
+
+url for run on web will be shared later or never be share based on offline game standards
+
 ```
+
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
