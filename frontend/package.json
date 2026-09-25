@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@belivvr/aframe-react": "^0.4.2",
+    "@tauri-apps/api": "^2.11.1",
     "aframe": "^1.8.0",
     "aframe-extras": "^7.7.0",
     "next": "16.3.5",
@@ -18,6 +19,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@tauri-apps/cli": "^2.11.5",
     "@types/aframe": "^1.2.10",
     "@types/node": "^20",
     "@types/react": "^19",
