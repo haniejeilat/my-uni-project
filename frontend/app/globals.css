@@ -48,7 +48,7 @@ border-radius: 16px;
 display: flex;
 gap: 50px;
 flex-direction: column;
-background-image: url('../public/assets/menu.jpg');
+background-image: url('/assets/menu.jpg');
 background-position: center; 
 background-size: cover;
 background-repeat: no-repeat;

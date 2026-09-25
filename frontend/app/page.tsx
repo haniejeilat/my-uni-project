@@ -10,11 +10,14 @@ export default function Main(){
                 key={index} 
                 id={`btn-${index}`}
                 onClick={async() => {
-                    if(text === "Quit") {
+                    if (text === "Quit") {
+                    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
                      await getCurrentWindow().close();
-                     } 
+                    }
+                    }
+
                     else {
-                     return window.location.href = `/${text}`;
+                     return window.location.href = `/${text}/`;
                    }
                 }}
               >
