@@ -16,7 +16,8 @@ export default function VRScence() {
     , wallref2 = useRef(null)
     , smallwallref = useRef(null)
     , wallwithdoorref = useRef(null)
-    , npcpoliceref = useRef(null)
+    , npcpoliceref = useRef(null);
+
 
   const [pause, setPause] = useState(false);
   const pauseRef = useRef(false);
@@ -46,16 +47,13 @@ export default function VRScence() {
     let yaw = 0;
     let pitch = 0;
     let doorOpen = false;
-
+    const playerPhysics = { vy: 0, onGround: false };
     /*-------------------gravity configs------------------*/
     const GRAVITY = 30;
     const STEP = 1;
     const DOWN = new THREE.Vector3(0, -1, 0);
-    const groundRay = new THREE.Raycaster();
-
-    let vy = 0;
+    const PlayerRay = new THREE.Raycaster();
     const JUMP = 12;
-    let onGround = false;
 
     /*-------------------walls configs------------------*/
     const doorRay = new THREE.Raycaster();
@@ -66,26 +64,56 @@ export default function VRScence() {
     const wallwithdoorBox = new THREE.Box3();
     const doorHoleBox = new THREE.Box3();
     const smallwallBox = new THREE.Box3();
-
+    const ladderBox = new THREE.Box3();
     let doorHoleCaptured = false;
 
     /*-------------npc movement-------------*/
-    const moveRay = new THREE.Raycaster();
-
-    let npcvy = 0;
-    let firstdone = false;
+    const NPCRay = new THREE.Raycaster();
+    const npcPhysics = { vy: 0 };
 
     /*-------------npc look-----------*/
     const MAX_BLOCKS_NPC = 30;
-    const ENDNPC = 50;
-    const STARTNPC = 0;
-    let currentXnpc = 0;
+    const npcmoveStates = { firstdone: false };
     let caught = false;
 
-    /*
-      NPC FOV
-      90 degrees = 45 degrees لكل جهة
-    */
+    function NpcMovement(npcmovestates, object3D, Aside, Bside, startnpc, endnpc, npcSpeed, dt) {
+      if (!npcmovestates.firstdone) {
+        if (object3D.position.x >= endnpc) {
+          object3D.position.x = endnpc;
+          object3D.rotation.y = Bside;
+          npcmovestates.firstdone = true;
+        } else {
+          object3D.position.x += npcSpeed * dt;
+          object3D.rotation.y = Aside;
+        }
+      } else {
+        if (object3D.position.x <= startnpc) {
+          object3D.position.x = startnpc;
+          object3D.rotation.y = Aside;
+          npcmovestates.firstdone = false;
+        } else {
+          object3D.position.x -= npcSpeed * dt;
+          object3D.rotation.y = Bside;
+        }
+      }
+    }
+
+    function GravityAndWithJump(landObjecthit, Objectref, physics, dt) {
+      if (
+        landObjecthit &&
+        physics.vy <= 0 &&
+        Objectref.object3D.position.y <= landObjecthit.point.y + 0.05
+      ) {
+        Objectref.object3D.position.y = landObjecthit.point.y;
+        physics.vy = 0;
+        physics.onGround = true;
+      } else {
+        physics.vy -= GRAVITY * dt;
+        Objectref.object3D.position.y += physics.vy * dt;
+        physics.onGround = false;
+      }
+    }
+
     function isPlayerInNpcFOV(
       npcObject,
       playerPos,
@@ -103,11 +131,7 @@ export default function VRScence() {
         return false;
       }
 
-      /*
-        A-Frame / Three.js forward direction
-        مع تصحيح اتجاه الموديل + Math.PI
-      */
-      const npcRotation = npcObject.rotation.y ;
+      const npcRotation = npcObject.rotation.y;
 
       const forward = new THREE.Vector3(
         Math.sin(npcRotation),
@@ -117,11 +141,7 @@ export default function VRScence() {
 
       forward.normalize();
 
-      const toPlayer = new THREE.Vector3(
-        dx,
-        0,
-        dz
-      );
+      const toPlayer = new THREE.Vector3(dx, 0, dz);
 
       if (toPlayer.lengthSq() === 0) {
         return true;
@@ -139,10 +159,7 @@ export default function VRScence() {
     function segmentIntersectsBox(from, to, box) {
       const dir = new THREE.Vector3().subVectors(to, from);
 
-      const ray = new THREE.Ray(
-        from,
-        dir.clone().normalize()
-      );
+      const ray = new THREE.Ray(from, dir.clone().normalize());
 
       const hit = new THREE.Vector3();
 
@@ -164,21 +181,11 @@ export default function VRScence() {
       heights = [0.3, 1.0, 1.6]
     ) {
       for (const h of heights) {
-        const from = new THREE.Vector3(
-          fromPos.x,
-          fromPos.y + h,
-          fromPos.z
-        );
+        const from = new THREE.Vector3(fromPos.x, fromPos.y + h, fromPos.z);
 
-        const to = new THREE.Vector3(
-          toPos.x,
-          toPos.y + h,
-          toPos.z
-        );
+        const to = new THREE.Vector3(toPos.x, toPos.y + h, toPos.z);
 
-        const blocked = boxes.some(
-          box => segmentIntersectsBox(from, to, box)
-        );
+        const blocked = boxes.some(box => segmentIntersectsBox(from, to, box));
 
         if (!blocked) {
           return true;
@@ -191,10 +198,7 @@ export default function VRScence() {
     const down = (e) => {
       keys[e.code] = true;
 
-      if (
-        e.code === 'KeyG' &&
-        inventoryref.current
-      ) {
+      if (e.code === 'KeyG' && inventoryref.current) {
         inventoryref.current.style.display = 'grid';
       }
 
@@ -205,27 +209,18 @@ export default function VRScence() {
       ) {
         doorOpen = true;
 
-        Doorref.current?.setAttribute(
-          'gltf-model',
-          '#celldoorModel'
-        );
+        Doorref.current?.setAttribute('gltf-model', '#celldoorModel');
 
         Doorref.current?.setAttribute(
           'animation-mixer',
           'loop: once; clampWhenFinished: true'
         );
 
-        Doorref.current?.setAttribute(
-          'position',
-          '14.97 0 26.2'
-        );
+        Doorref.current?.setAttribute('position', '14.97 0 26.2');
       }
 
-      if (
-        e.code === 'Space' &&
-        onGround
-      ) {
-        vy = JUMP;
+      if (e.code === 'Space' && playerPhysics.onGround) {
+        playerPhysics.vy = JUMP;
       }
 
       if (e.code === 'Escape') {
@@ -236,10 +231,7 @@ export default function VRScence() {
     const up = (e) => {
       keys[e.code] = false;
 
-      if (
-        e.code === 'KeyG' &&
-        inventoryref.current
-      ) {
+      if (e.code === 'KeyG' && inventoryref.current) {
         inventoryref.current.style.display = 'none';
       }
     };
@@ -252,10 +244,7 @@ export default function VRScence() {
       yaw -= e.movementX * SENS;
       pitch -= e.movementY * SENS;
 
-      pitch = Math.max(
-        -1.55,
-        Math.min(1.55, pitch)
-      );
+      pitch = Math.max(-1.55, Math.min(1.55, pitch));
 
       if (walkref.current?.object3D) {
         walkref.current.object3D.rotation.y = yaw;
@@ -267,20 +256,14 @@ export default function VRScence() {
     };
 
     const onClick = () => {
-      const canvas = document.querySelector(
-        'a-scene canvas'
-      );
+      const canvas = document.querySelector('a-scene canvas');
 
-      if (
-        canvas &&
-        document.pointerLockElement !== canvas
-      ) {
+      if (canvas && document.pointerLockElement !== canvas) {
         canvas.requestPointerLock();
         return;
       }
 
-      const cam =
-        document.querySelector('a-scene')?.camera;
+      const cam = document.querySelector('a-scene')?.camera;
 
       const key = keyref.current;
 
@@ -288,44 +271,19 @@ export default function VRScence() {
         return;
       }
 
-      raycaster.setFromCamera(
-        { x: 0, y: 0 },
-        cam
-      );
+      raycaster.setFromCamera({ x: 0, y: 0 }, cam);
 
-      if (
-        raycaster.intersectObject(
-          key.object3D,
-          true
-        ).length
-      ) {
+      if (raycaster.intersectObject(key.object3D, true).length) {
         setItems((prev) =>
-          prev.includes('old_key')
-            ? prev
-            : [...prev, 'old_key']
+          prev.includes('old_key') ? prev : [...prev, 'old_key']
         );
       }
     };
 
-    window.addEventListener(
-      'keydown',
-      down
-    );
-
-    window.addEventListener(
-      'keyup',
-      up
-    );
-
-    window.addEventListener(
-      'mousemove',
-      onMouseMove
-    );
-
-    window.addEventListener(
-      'click',
-      onClick
-    );
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('click', onClick);
 
     let raf;
     let last = 0;
@@ -336,10 +294,7 @@ export default function VRScence() {
       let dt;
 
       if (last !== 0) {
-        dt = Math.min(
-          (now - last) / 1000,
-          0.1
-        );
+        dt = Math.min((now - last) / 1000, 0.1);
       } else {
         dt = 0;
       }
@@ -349,85 +304,39 @@ export default function VRScence() {
       if (pauseRef.current) {
         return;
       }
-
       /*------------------------first-person configs------------------------*/
-      const el = walkref.current;
-      const npcrel = npcpoliceref.current;
-
-      if (
-        !el?.object3D ||
-        !npcrel?.object3D
-      ) {
+      if (!walkref.current?.object3D || !npcpoliceref.current?.object3D) {
         return;
       }
 
-      const pos = el.object3D.position;
-      const NPCpos = npcrel.object3D.position;
-
-      /*
-        المسافة الحقيقية بين اللاعب والـNPC
-      */
       const distNpcPlayer = Math.hypot(
-        pos.x - NPCpos.x,
-        pos.z - NPCpos.z
+        walkref.current.object3D.position.x - npcpoliceref.current.object3D.position.x,
+        walkref.current.object3D.position.z - npcpoliceref.current.object3D.position.z
       );
 
       /*------------------gravity configs------------------*/
-      const land =
-        landref.current?.getObject3D('mesh');
-
-      /*--------------walls configs---------------*/
-      const doorel = Doorref.current;
-      const Wallrel = wallref.current;
-      const Wallrel1 = wallref1.current;
-      const Wallrel2 = wallref2.current;
-      const Wallrelwithdoor =
-        wallwithdoorref.current;
-      const SmallWallel =
-        smallwallref.current;
+      const land = landref.current?.getObject3D('mesh');
 
       /*------------wall boxes------------*/
       let wallsReady = false;
 
       if (
-        Wallrel?.object3D &&
-        Wallrel1?.object3D &&
-        Wallrel2?.object3D &&
-        Wallrelwithdoor?.object3D &&
-        SmallWallel?.object3D
+        wallref.current?.object3D &&
+        wallref1.current?.object3D &&
+        wallref2.current?.object3D &&
+        wallwithdoorref.current?.object3D &&
+        smallwallref.current?.object3D
       ) {
         wallsReady = true;
 
-        wallBox1
-          .setFromObject(Wallrel.object3D)
-          .expandByScalar(0.5);
+        wallBox1.setFromObject(wallref.current.object3D).expandByScalar(0.5);
+        wallBox2.setFromObject(wallref1.current.object3D).expandByScalar(0.5);
+        wallBox3.setFromObject(wallref2.current.object3D).expandByScalar(0.5);
+        wallwithdoorBox.setFromObject(wallwithdoorref.current.object3D);
+        smallwallBox.setFromObject(smallwallref.current.object3D).expandByScalar(0.5);
 
-        wallBox2
-          .setFromObject(Wallrel1.object3D)
-          .expandByScalar(0.5);
-
-        wallBox3
-          .setFromObject(Wallrel2.object3D)
-          .expandByScalar(0.5);
-
-        wallwithdoorBox
-          .setFromObject(
-            Wallrelwithdoor.object3D
-          );
-
-        smallwallBox
-          .setFromObject(
-            SmallWallel.object3D
-          )
-          .expandByScalar(0.5);
-
-        if (
-          !doorHoleCaptured &&
-          doorel?.object3D
-        ) {
-          doorHoleBox.setFromObject(
-            doorel.object3D
-          );
+        if (!doorHoleCaptured && Doorref.current?.object3D) {
+          doorHoleBox.setFromObject(Doorref.current.object3D);
 
           doorHoleCaptured = true;
         }
@@ -435,68 +344,35 @@ export default function VRScence() {
 
       /*----------------------------------------Gravity implemention----------------------------------*/
       if (land) {
-        groundRay.set(
+        PlayerRay.set(
           new THREE.Vector3(
-            pos.x,
-            pos.y + STEP,
-            pos.z
+            walkref.current.object3D.position.x,
+            walkref.current.object3D.position.y + STEP,
+            walkref.current.object3D.position.z
           ),
           DOWN
         );
 
-        const hit =
-          groundRay.intersectObject(
-            land,
-            true
-          )[0];
+        const hit = PlayerRay.intersectObject(land, true)[0];
 
-        if (
-          hit &&
-          vy <= 0 &&
-          pos.y <= hit.point.y + 0.05
-        ) {
-          pos.y = hit.point.y;
-          vy = 0;
-          onGround = true;
-        } else {
-          vy -= GRAVITY * dt;
-          pos.y += vy * dt;
-          onGround = false;
-        }
+        GravityAndWithJump(hit, walkref.current, playerPhysics, dt);
 
         /*----------------------------NPC implemention-----------------------------*/
-        moveRay.set(
+        NPCRay.set(
           new THREE.Vector3(
-            NPCpos.x,
-            NPCpos.y + STEP,
-            NPCpos.z
+            npcpoliceref.current.object3D.position.x,
+            npcpoliceref.current.object3D.position.y + STEP,
+            npcpoliceref.current.object3D.position.z
           ),
           DOWN
         );
 
-        const connect =
-          moveRay.intersectObject(
-            land,
-            true
-          )[0];
+        const connect = NPCRay.intersectObject(land, true)[0];
 
-        if (
-          connect &&
-          npcvy <= 0 &&
-          NPCpos.y <= connect.point.y + 0.05
-        ) {
-          NPCpos.y = connect.point.y;
-          npcvy = 0;
-        } else {
-          npcvy -= GRAVITY * dt;
-          NPCpos.y += npcvy * dt;
-        }
+        GravityAndWithJump(connect, npcpoliceref.current, npcPhysics, dt);
 
         /*----------------------------NPC VISION-----------------------------*/
-        if (
-          wallsReady &&
-          !caught
-        ) {
+        if (wallsReady && !caught) {
           const obstacleBoxes = [
             wallBox1,
             wallBox2,
@@ -505,111 +381,53 @@ export default function VRScence() {
             smallwallBox
           ];
 
-          const playerInFOV =
-            isPlayerInNpcFOV(
-              npcrel.object3D,
-              pos,
-              90,
-              MAX_BLOCKS_NPC
-            );
+          const playerInFOV = isPlayerInNpcFOV(
+            npcpoliceref.current.object3D,
+            walkref.current.object3D.position,
+            90,
+            MAX_BLOCKS_NPC
+          );
 
           const playerVisible =
             playerInFOV &&
             hasLineOfSight(
-              NPCpos,
-              pos,
+              npcpoliceref.current.object3D.position,
+              walkref.current.object3D.position,
               obstacleBoxes
             );
 
-          if (
-            playerVisible &&
-            distNpcPlayer <= MAX_BLOCKS_NPC
-          ) {
-            NPCpos.x = currentXnpc;
+          if (playerVisible && distNpcPlayer <= MAX_BLOCKS_NPC) {
             caught = true;
           }
         }
 
         /*----------------------------NPC movement-----------------------------*/
         if (!caught) {
-          if (!firstdone) {
-            if (NPCpos.x >= ENDNPC) {
-              NPCpos.x = ENDNPC;
-
-              npcrel.object3D.rotation.y =
-                -Math.PI / 2;
-
-              firstdone = true;
-            } else {
-              NPCpos.x += NPCSPEED * dt;
-
-              currentXnpc = NPCpos.x;
-
-              if (
-                npcrel.object3D.rotation.y !==
-                Math.PI / 2
-              ) {
-                npcrel.object3D.rotation.y =
-                  Math.PI / 2;
-              }
-            }
-          } else {
-            if (NPCpos.x <= STARTNPC) {
-              NPCpos.x = STARTNPC;
-
-              npcrel.object3D.rotation.y =
-                Math.PI / 2;
-
-              firstdone = false;
-            } else {
-              NPCpos.x -= NPCSPEED * dt;
-
-              currentXnpc = NPCpos.x;
-
-              if (
-                npcrel.object3D.rotation.y !==
-                -Math.PI / 2
-              ) {
-                npcrel.object3D.rotation.y =
-                  -Math.PI / 2;
-              }
-            }
-          }
+          NpcMovement(npcmoveStates, npcpoliceref.current.object3D, Math.PI / 2, -Math.PI / 2, 0, 50, 10, dt);
         }
       }
 
       /*------------------------------first-personwalk configs---------------------------------------*/
-      const x =
-        (keys.KeyD ? 1 : 0) -
-        (keys.KeyA ? 1 : 0);
+      const X = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
 
-      const z =
-        (keys.KeyS ? 1 : 0) -
-        (keys.KeyW ? 1 : 0);
+      const Z = (keys.KeyS ? 1 : 0) - (keys.KeyW ? 1 : 0);
 
-      if (!x && !z) {
+      if (!X && !Z) {
         return;
       }
 
-      const len =
-        Math.sqrt(
-          x ** 2 + z ** 2
-        );
+      const len = Math.sqrt(X ** 2 + Z ** 2);
 
       const sin = Math.sin(yaw);
       const cos = Math.cos(yaw);
 
-      const dx =
-        (x * cos + z * sin) / len;
+      const dx = (X * cos + Z * sin) / len;
 
-      const dz =
-        (-x * sin + z * cos) / len;
+      const dz = (-X * sin + Z * cos) / len;
 
-      const nx =
-        pos.x + dx * SPEED * dt;
+      const nx = walkref.current.object3D.position.x + dx * SPEED * dt;
 
-      const nz =
-        pos.z + dz * SPEED * dt;
+      const nz = walkref.current.object3D.position.z + dz * SPEED * dt;
 
       /*---------------------------first-person walk && walls implementation--------------------------*/
       let blockedwall1 = false;
@@ -620,21 +438,21 @@ export default function VRScence() {
 
       if (wallsReady) {
         blockedwall1 =
-          pos.y < wallBox1.max.y &&
+          walkref.current.object3D.position.y < wallBox1.max.y &&
           nx > wallBox1.min.x &&
           nx < wallBox1.max.x &&
           nz > wallBox1.min.z &&
           nz < wallBox1.max.z;
 
         blockedwall2 =
-          pos.y < wallBox2.max.y &&
+          walkref.current.object3D.position.y < wallBox2.max.y &&
           nx > wallBox2.min.x &&
           nx < wallBox2.max.x &&
           nz > wallBox2.min.z &&
           nz < wallBox2.max.z;
 
         blockedwall3 =
-          pos.y < wallBox3.max.y &&
+          walkref.current.object3D.position.y < wallBox3.max.y &&
           nx > wallBox3.min.x &&
           nx < wallBox3.max.x &&
           nz > wallBox3.min.z &&
@@ -648,7 +466,7 @@ export default function VRScence() {
           nz < doorHoleBox.max.z;
 
         blockedwallwithdoor =
-          pos.y < wallwithdoorBox.max.y &&
+          walkref.current.object3D.position.y < wallwithdoorBox.max.y &&
           nx > wallwithdoorBox.min.x &&
           nx < wallwithdoorBox.max.x &&
           nz > wallwithdoorBox.min.z &&
@@ -656,7 +474,7 @@ export default function VRScence() {
           !(doorOpen && inholedoor);
 
         blockedsmallwall =
-          pos.y < smallwallBox.max.y &&
+          walkref.current.object3D.position.y < smallwallBox.max.y &&
           nx > smallwallBox.min.x &&
           nx < smallwallBox.max.x &&
           nz > smallwallBox.min.z &&
@@ -671,8 +489,8 @@ export default function VRScence() {
         !blockedwallwithdoor &&
         !blockedsmallwall
       ) {
-        pos.x = nx;
-        pos.z = nz;
+        walkref.current.object3D.position.x = nx;
+        walkref.current.object3D.position.z = nz;
       }
     };
 
@@ -681,13 +499,13 @@ export default function VRScence() {
     return () => {
       cancelAnimationFrame(raf);
 
-      window.removeEventListener('keydown',down);
+      window.removeEventListener('keydown', down);
 
       window.removeEventListener('keyup', up);
 
-      window.removeEventListener('mousemove',onMouseMove);
+      window.removeEventListener('mousemove', onMouseMove);
 
-      window.removeEventListener('click',onClick);
+      window.removeEventListener('click', onClick);
     };
   }, []);
 
@@ -715,9 +533,8 @@ export default function VRScence() {
         left: 0
       }}
     >
-    
-      <MainComponents walkref = {walkref} camref = {camref} inventoryref = {inventoryref}  Doorref = {Doorref} landref = {landref} wallref = {wallref} wallref1 = {wallref1} wallref2 = {wallref2} smallwallref = {smallwallref} wallwithdoorref = {wallwithdoorref} npcpoliceref = {npcpoliceref} keyref={keyref}  showKey={!items.includes('old_key')}/>
-      
+
+      <MainComponents walkref = {walkref} camref = {camref} inventoryref = {inventoryref}  Doorref = {Doorref} landref = {landref} wallref = {wallref} wallref1 = {wallref1} wallref2 = {wallref2} smallwallref = {smallwallref} wallwithdoorref = {wallwithdoorref} npcpoliceref = {npcpoliceref} keyref={keyref}    showKey={!items.includes('old_key') }/>
 
       {/*----------------------aim templer-----------------*/}
       <Aim/>

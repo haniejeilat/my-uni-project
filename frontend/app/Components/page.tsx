@@ -1,6 +1,6 @@
 //@ts-nocheck
 import React,{useRef} from 'react';
-export default function MainComponents({ walkref, camref, inventoryref, Doorref, landref, wallref, wallref1, wallref2, smallwallref, wallwithdoorref, npcpoliceref ,keyref, showKey}: any) {
+export default function MainComponents({ walkref, camref, inventoryref, Doorref, landref, wallref, wallref1, wallref2, smallwallref, wallwithdoorref, npcpoliceref,keyref, showKey}: any) {
     return (
         
         <a-scene
@@ -50,6 +50,11 @@ export default function MainComponents({ walkref, camref, inventoryref, Doorref,
           <a-asset-item
             id="smallwallModel"
             src="/assets/smallwall.glb"
+          ></a-asset-item>
+
+          <a-asset-item
+            id="ladderModel"
+            src="/assets/ladder.glb"
           ></a-asset-item>
         </a-assets>
 
@@ -154,6 +159,8 @@ export default function MainComponents({ walkref, camref, inventoryref, Doorref,
     matrixAutoUpdate="false"
      ></a-entity>
     )}
+
+    
       </a-scene>
       
       
