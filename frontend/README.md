@@ -16,9 +16,9 @@ npm install
    V
 
 #frontend 
-npm run dev
+npm run tauri dev
 # or
-bun run dev
+bun run tauri dev
 
 
 

@@ -1,8 +1,7 @@
 //@ts-nocheck
 import React,{useRef} from 'react';
-export default function MainComponents({ walkref, camref, inventoryref, Doorref, landref, wallref, wallref1, wallref2, smallwallref, wallwithdoorref, npcpoliceref,keyref, showKey}: any) {
+export default function MainComponents({ walkref, camref, inventoryref, Doorref, landref, wallref, wallref1, wallref2, smallwallref, wallwithdoorref, npcpoliceref,ladderref,stairref,keyref,secondfloorref, showKey}: any) {
     return (
-        
         <a-scene
         embedded
         renderer="colorManagement: true"
@@ -55,6 +54,16 @@ export default function MainComponents({ walkref, camref, inventoryref, Doorref,
           <a-asset-item
             id="ladderModel"
             src="/assets/ladder.glb"
+          ></a-asset-item>
+
+          <a-asset-item
+            id="StairModel"
+            src="/assets/stair_low_poly.glb"
+          ></a-asset-item>
+
+          <a-asset-item
+          id = "SecondfloorModel"
+          src = "/assets/secondfloor.glb"
           ></a-asset-item>
         </a-assets>
 
@@ -150,6 +159,31 @@ export default function MainComponents({ walkref, camref, inventoryref, Doorref,
           scale="1 3 1"
         ></a-entity>
       
+        <a-entity
+        ref = {ladderref}
+        gltf-model = "#ladderModel"
+        position="50 0 3"
+        rotation = "0 90 0"
+        scale = "0.1 0.1 0.1"
+        ></a-entity>
+
+        <a-entity
+        ref = {stairref}
+        gltf-model = "#StairModel"
+        position="0 0 50"
+        rotation = "0 0 0"
+        scale = "2 2 2"
+        ></a-entity>
+
+
+        <a-entity
+        ref = {secondfloorref}
+        gltf-model = "#SecondfloorModel"
+        position="0 6 43.8"
+        rotation = "0 0 0"
+        scale = "3 3 3"
+        ></a-entity>
+
         {showKey && (
      <a-entity
     ref={keyref}

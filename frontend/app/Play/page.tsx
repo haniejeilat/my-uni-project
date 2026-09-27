@@ -16,9 +16,11 @@ export default function VRScence() {
     , wallref2 = useRef(null)
     , smallwallref = useRef(null)
     , wallwithdoorref = useRef(null)
-    , npcpoliceref = useRef(null);
-
-
+    , npcpoliceref = useRef(null)
+    , ladderref = useRef(null)
+    , stairref = useRef(null)
+    , secondfloorref= useRef(null); 
+    
   const [pause, setPause] = useState(false);
   const pauseRef = useRef(false);
 
@@ -47,17 +49,18 @@ export default function VRScence() {
     let yaw = 0;
     let pitch = 0;
     let doorOpen = false;
-    const playerPhysics = { vy: 0, onGround: false };
+    const playerPhysics = { vy: 0, onGround: false , nx: 0, ny: 0};
+    
     /*-------------------gravity configs------------------*/
     const GRAVITY = 30;
     const STEP = 1;
+    const MAX_STEP = 0.4; 
     const DOWN = new THREE.Vector3(0, -1, 0);
     const PlayerRay = new THREE.Raycaster();
     const JUMP = 12;
 
     /*-------------------walls configs------------------*/
     const doorRay = new THREE.Raycaster();
-
     const wallBox1 = new THREE.Box3();
     const wallBox2 = new THREE.Box3();
     const wallBox3 = new THREE.Box3();
@@ -65,7 +68,12 @@ export default function VRScence() {
     const doorHoleBox = new THREE.Box3();
     const smallwallBox = new THREE.Box3();
     const ladderBox = new THREE.Box3();
+    const stairtBox = new THREE.Box3();
     let doorHoleCaptured = false;
+
+    /*-------------------ladder configs------------------*/
+    let onLadder = false;
+    const LADDER_DISMOUNT_PUSH = 1;
 
     /*-------------npc movement-------------*/
     const NPCRay = new THREE.Raycaster();
@@ -75,7 +83,20 @@ export default function VRScence() {
     const MAX_BLOCKS_NPC = 30;
     const npcmoveStates = { firstdone: false };
     let caught = false;
-
+    const LADDER_WRONG_WAY_TOLERANCE = 0.5
+    
+    function wallslimiter(object3D , objectBox ,  physics){
+          if(object3D.position.y < objectBox.max.y &&
+          physics.nx > objectBox.min.x &&
+          physics.nx < objectBox.max.x &&
+          physics.nz > objectBox.min.z &&
+          physics.nz < objectBox.max.z
+          ){
+            return true;
+          }
+          return false;
+    }
+    
     function NpcMovement(npcmovestates, object3D, Aside, Bside, startnpc, endnpc, npcSpeed, dt) {
       if (!npcmovestates.firstdone) {
         if (object3D.position.x >= endnpc) {
@@ -102,7 +123,7 @@ export default function VRScence() {
       if (
         landObjecthit &&
         physics.vy <= 0 &&
-        Objectref.object3D.position.y <= landObjecthit.point.y + 0.05
+        Objectref.object3D.position.y - landObjecthit.point.y <= MAX_STEP
       ) {
         Objectref.object3D.position.y = landObjecthit.point.y;
         physics.vy = 0;
@@ -223,6 +244,28 @@ export default function VRScence() {
         playerPhysics.vy = JUMP;
       }
 
+      
+if (onLadder && e.code === 'Space') {
+  const forwardX = -Math.sin(yaw);
+  const forwardZ = -Math.cos(yaw);
+
+
+  const ladderSize = Math.max(
+    ladderBox.max.x - ladderBox.min.x,
+    ladderBox.max.z - ladderBox.min.z
+  );
+  const pushDist = 2;
+
+ if( 0 <= walkref.current.object3D.rotation.y && Math.PI >= walkref.current.object3D.rotation.y){
+  walkref.current.object3D.position.x += forwardX * pushDist;
+  walkref.current.object3D.position.z += forwardZ * pushDist;
+  }
+
+  onLadder = false;
+  window.removeEventListener('mousemove', onMouseMovefixed);
+  window.addEventListener('mousemove', onMouseMovenormal);
+}
+
       if (e.code === 'Escape') {
         setPause(p => !p);
       }
@@ -236,16 +279,35 @@ export default function VRScence() {
       }
     };
 
-    const onMouseMove = (e) => {
+    const onMouseMovenormal = (e) => {
       if (!document.pointerLockElement) {
         return;
       }
 
       yaw -= e.movementX * SENS;
+      yaw = ((yaw + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+      pitch -= e.movementY * SENS;
+      pitch = Math.max(-1.55, Math.min(1.55, pitch));
+
+      if (walkref.current?.object3D) {
+        walkref.current.object3D.rotation.y = yaw;
+      }
+
+      if (camref.current?.object3D) {
+        camref.current.object3D.rotation.x = pitch;
+      }
+    };
+
+    const onMouseMovefixed = (e) => {
+      if (!document.pointerLockElement) {
+        return;
+      }
+
+      yaw -= e.movementX * SENS;
+      yaw = ((yaw + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
       pitch -= e.movementY * SENS;
 
       pitch = Math.max(-1.55, Math.min(1.55, pitch));
-
       if (walkref.current?.object3D) {
         walkref.current.object3D.rotation.y = yaw;
       }
@@ -280,9 +342,16 @@ export default function VRScence() {
       }
     };
 
+    let blockedwall1 = false,
+      blockedwall2 = false,
+      blockedwall3 = false,
+      blockedwallwithdoor = false,
+      blockedsmallwall = false,
+      onStaircase = false;
+
     window.addEventListener('keydown', down);
-    window.addEventListener('keyup', up);
-    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('keyup', up)
+    window.addEventListener('mousemove', onMouseMovenormal);
     window.addEventListener('click', onClick);
 
     let raf;
@@ -316,6 +385,8 @@ export default function VRScence() {
 
       /*------------------gravity configs------------------*/
       const land = landref.current?.getObject3D('mesh');
+      const stairsMesh = stairref.current?.getObject3D('mesh');
+      const secondMesh = secondfloorref.current?.getObject3D('mesh');
 
       /*------------wall boxes------------*/
       let wallsReady = false;
@@ -325,8 +396,10 @@ export default function VRScence() {
         wallref1.current?.object3D &&
         wallref2.current?.object3D &&
         wallwithdoorref.current?.object3D &&
-        smallwallref.current?.object3D
-      ) {
+        smallwallref.current?.object3D &&
+        ladderref.current?.object3D &&
+        stairref.current?.object3D
+        ) {
         wallsReady = true;
 
         wallBox1.setFromObject(wallref.current.object3D).expandByScalar(0.5);
@@ -334,12 +407,31 @@ export default function VRScence() {
         wallBox3.setFromObject(wallref2.current.object3D).expandByScalar(0.5);
         wallwithdoorBox.setFromObject(wallwithdoorref.current.object3D);
         smallwallBox.setFromObject(smallwallref.current.object3D).expandByScalar(0.5);
-
+        ladderBox.setFromObject(ladderref.current.object3D).expandByScalar(0.5);
+        
+        /*----------------------------door hole capture (retries until the gltf mesh is actually loaded)----------------------------*/
         if (!doorHoleCaptured && Doorref.current?.object3D) {
-          doorHoleBox.setFromObject(Doorref.current.object3D);
+          const tempDoorHoleBox = new THREE.Box3().setFromObject(Doorref.current.object3D);
 
-          doorHoleCaptured = true;
+          if (!tempDoorHoleBox.isEmpty()) {
+            doorHoleBox.copy(tempDoorHoleBox).expandByScalar(0.3);
+            doorHoleCaptured = true;
+          }
         }
+      }
+
+      /*----------------------------ladder zone detection (every frame)----------------------------*/
+      if (wallsReady) {
+        const isOnLadderNow = ladderBox.containsPoint(walkref.current.object3D.position);
+        
+        if (isOnLadderNow !== onLadder) {
+          onLadder = isOnLadderNow;
+
+          window.removeEventListener('mousemove', onMouseMovenormal);
+          window.removeEventListener('mousemove', onMouseMovefixed);
+          window.addEventListener('mousemove', onLadder ? onMouseMovefixed : onMouseMovenormal);
+        }
+       
       }
 
       /*----------------------------------------Gravity implemention----------------------------------*/
@@ -353,10 +445,17 @@ export default function VRScence() {
           DOWN
         );
 
-        const hit = PlayerRay.intersectObject(land, true)[0];
-
+        const hit = PlayerRay.intersectObjects([land, stairsMesh , secondMesh].filter(Boolean), true)[0];
+        
+        if (onLadder) {
+        playerPhysics.vy = 0;
+        playerPhysics.onGround = true;
+      } 
+      if(hit) {
         GravityAndWithJump(hit, walkref.current, playerPhysics, dt);
-
+        
+        }
+    
         /*----------------------------NPC implemention-----------------------------*/
         NPCRay.set(
           new THREE.Vector3(
@@ -425,75 +524,50 @@ export default function VRScence() {
 
       const dz = (-X * sin + Z * cos) / len;
 
-      const nx = walkref.current.object3D.position.x + dx * SPEED * dt;
+      playerPhysics.nx = walkref.current.object3D.position.x + dx * SPEED * dt;
 
-      const nz = walkref.current.object3D.position.z + dz * SPEED * dt;
+       playerPhysics.nz = walkref.current.object3D.position.z + dz * SPEED * dt;
 
       /*---------------------------first-person walk && walls implementation--------------------------*/
-      let blockedwall1 = false;
-      let blockedwall2 = false;
-      let blockedwall3 = false;
-      let blockedwallwithdoor = false;
-      let blockedsmallwall = false;
 
       if (wallsReady) {
-        blockedwall1 =
-          walkref.current.object3D.position.y < wallBox1.max.y &&
-          nx > wallBox1.min.x &&
-          nx < wallBox1.max.x &&
-          nz > wallBox1.min.z &&
-          nz < wallBox1.max.z;
+        blockedwall1 = wallslimiter(walkref.current.object3D , wallBox1 , playerPhysics);
+        blockedwall2 = wallslimiter(walkref.current.object3D , wallBox2 , playerPhysics);
+        blockedwall3 =  wallslimiter(walkref.current.object3D , wallBox3 , playerPhysics);
+          
+    const inholedoor = doorHoleCaptured &&
+          playerPhysics.nx > doorHoleBox.min.x &&
+          playerPhysics.nx < doorHoleBox.max.x &&
+          playerPhysics.nz > doorHoleBox.min.z &&
+          playerPhysics.nz < doorHoleBox.max.z;
 
-        blockedwall2 =
-          walkref.current.object3D.position.y < wallBox2.max.y &&
-          nx > wallBox2.min.x &&
-          nx < wallBox2.max.x &&
-          nz > wallBox2.min.z &&
-          nz < wallBox2.max.z;
+        blockedwallwithdoor = wallslimiter(walkref.current.object3D , wallwithdoorBox , playerPhysics) 
+        && !(doorOpen && inholedoor);
 
-        blockedwall3 =
-          walkref.current.object3D.position.y < wallBox3.max.y &&
-          nx > wallBox3.min.x &&
-          nx < wallBox3.max.x &&
-          nz > wallBox3.min.z &&
-          nz < wallBox3.max.z;
-
-        const inholedoor =
-          doorHoleCaptured &&
-          nx > doorHoleBox.min.x &&
-          nx < doorHoleBox.max.x &&
-          nz > doorHoleBox.min.z &&
-          nz < doorHoleBox.max.z;
-
-        blockedwallwithdoor =
-          walkref.current.object3D.position.y < wallwithdoorBox.max.y &&
-          nx > wallwithdoorBox.min.x &&
-          nx < wallwithdoorBox.max.x &&
-          nz > wallwithdoorBox.min.z &&
-          nz < wallwithdoorBox.max.z &&
-          !(doorOpen && inholedoor);
-
-        blockedsmallwall =
-          walkref.current.object3D.position.y < smallwallBox.max.y &&
-          nx > smallwallBox.min.x &&
-          nx < smallwallBox.max.x &&
-          nz > smallwallBox.min.z &&
-          nz < smallwallBox.max.z;
-      }
+        blockedsmallwall = wallslimiter(walkref.current.object3D , smallwallBox , playerPhysics);
+          }
 
       /*--------------------------first-person walk allowed condition------------------------------------*/
-      if (
-        !blockedwall1 &&
-        !blockedwall2 &&
-        !blockedwall3 &&
-        !blockedwallwithdoor &&
-        !blockedsmallwall
-      ) {
-        walkref.current.object3D.position.x = nx;
-        walkref.current.object3D.position.z = nz;
+      if (!onLadder && !blockedwall1 && !blockedwall2 && !blockedwall3 && !blockedwallwithdoor && !blockedsmallwall) {
+        walkref.current.object3D.position.x = playerPhysics.nx;
+        walkref.current.object3D.position.z = playerPhysics.nz;
       }
-    };
 
+      /*--------------------------ladder climb------------------------------------*/
+      if (onLadder) {
+        const Y = keys.KeyW ? 1 : 0;
+
+        const siny = Math.sin(pitch);
+
+        const dy = Y * siny; 
+
+        const ny = walkref.current.object3D.position.y + dy * SPEED * dt;
+
+        walkref.current.object3D.position.y = ny;
+
+        
+      }
+};
     raf = requestAnimationFrame(loop);
 
     return () => {
@@ -503,7 +577,9 @@ export default function VRScence() {
 
       window.removeEventListener('keyup', up);
 
-      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mousemove', onMouseMovenormal);
+
+      window.removeEventListener('mousemove', onMouseMovefixed);
 
       window.removeEventListener('click', onClick);
     };
@@ -533,8 +609,7 @@ export default function VRScence() {
         left: 0
       }}
     >
-
-      <MainComponents walkref = {walkref} camref = {camref} inventoryref = {inventoryref}  Doorref = {Doorref} landref = {landref} wallref = {wallref} wallref1 = {wallref1} wallref2 = {wallref2} smallwallref = {smallwallref} wallwithdoorref = {wallwithdoorref} npcpoliceref = {npcpoliceref} keyref={keyref}    showKey={!items.includes('old_key') }/>
+    <MainComponents walkref = {walkref} camref = {camref} inventoryref = {inventoryref}  Doorref = {Doorref} landref = {landref} wallref = {wallref} wallref1 = {wallref1} wallref2 = {wallref2} smallwallref = {smallwallref} wallwithdoorref = {wallwithdoorref} npcpoliceref = {npcpoliceref} keyref={keyref} ladderref = {ladderref} stairref = {stairref} secondfloorref = {secondfloorref} showKey={!items.includes('old_key') }/>
 
       {/*----------------------aim templer-----------------*/}
       <Aim/>
