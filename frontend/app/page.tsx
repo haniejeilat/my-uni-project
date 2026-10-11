@@ -1,7 +1,7 @@
 'use client'
 import { getCurrentWindow } from '@tauri-apps/api/window';
 export default function Main(){
-   const menulist = ["Play" ,"Options" , 'configrations' ,"Quit" ];
+   const menulist = ["Play", "Continue", "Options", 'configrations', "Quit"];
    
    const BtnShortCut = () => {
         return menulist.map((text,index) => {
@@ -15,10 +15,12 @@ export default function Main(){
                      await getCurrentWindow().close();
                     }
                     }
-
+                    else if (text === "Continue") {
+                        window.location.href = '/Play/?continue=1';
+                    }
                     else {
-                     return window.location.href = `/${text}/`;
-                   }
+                        return window.location.href = `/${text}/`;
+                    }
                 }}
               >
                 {text}

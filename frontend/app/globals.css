@@ -46,7 +46,7 @@ border-radius: 16px;
 
 #main-container{
 display: flex;
-gap: 50px;
+gap: 20px;
 flex-direction: column;
 background-image: url('/assets/menu.jpg');
 background-position: center; 
@@ -90,3 +90,13 @@ margin-bottom: 100px;
     font-size: large;
     color: orange;
     }
+
+#timer-container {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 100px;
+    height: 100px;
+    color: orange;
+    z-index: 12;
+}

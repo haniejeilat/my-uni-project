@@ -5,35 +5,30 @@ import Menu from '@/app/Menu/page.tsx';
 import Aim from "../Components/aim/page.tsx";
 import MainComponents from "@/app/Components/page.tsx";
 import { useVRGameLoop } from "@/app/hooks/useVRGameLoop/page.ts";
-
+import Timer from "@/app/hooks/timer/page.tsx";
 export default function VRScence() {
   const refs = {
     walkref: useRef(null),
     camref: useRef(null),
     inventoryref: useRef(null),
     keyref: useRef(null),
-    Doorref: useRef(null),
     landref: useRef(null),
-    wallref: useRef(null),
-    wallref1: useRef(null),
-    wallref2: useRef(null),
-    smallwallref: useRef(null),
-    wallwithdoorref: useRef(null),
-    npcpoliceref: useRef(null),
-    ladderref: useRef(null),
-    stairref: useRef(null),
-    secondfloorref: useRef(null),
+    saveRef: useRef(null),
+    chooseref : useRef(null)
   };
+
 
   const [pause, setPause] = useState(false);
   const pauseRef = useRef(false);
-  useEffect(() => { pauseRef.current = pause; }, [pause]);
+  const [interialtimer , setinterialtimer] = useState(7200);
+  const timerRef = useRef(null);
+  useEffect(() => { pauseRef.current = pause; timerRef.current = interialtimer; }, [pause, interialtimer]);
 
   const [items, setItems] = useState<string[]>([]);
   const itemsref = useRef([]);
   itemsref.current = items;
 
-  useVRGameLoop(refs, itemsref, setItems, pauseRef, setPause);
+  useVRGameLoop(refs, itemsref, setItems, pauseRef, timerRef, setPause, setinterialtimer);
 
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'fixed', top: 0, left: 0 }}>
@@ -41,33 +36,23 @@ export default function VRScence() {
         walkref={refs.walkref}
         camref={refs.camref}
         inventoryref={refs.inventoryref}
-        Doorref={refs.Doorref}
         landref={refs.landref}
-        wallref={refs.wallref}
-        wallref1={refs.wallref1}
-        wallref2={refs.wallref2}
-        smallwallref={refs.smallwallref}
-        wallwithdoorref={refs.wallwithdoorref}
-        npcpoliceref={refs.npcpoliceref}
-        keyref={refs.keyref}
-        ladderref={refs.ladderref}
-        stairref={refs.stairref}
-        secondfloorref={refs.secondfloorref}
-        showKey={!items.includes('old_key')}
-      />
+        chooseref = {refs.chooseref}
+       />
 
       {/*----------------------aim templer-----------------*/}
       <Aim />
-
+      <Timer running ={!pause} setinterialtimer = {setinterialtimer} interialtimer = {interialtimer}/>
       {/*---------------------inventory--------------------*/}
-      <div ref={refs.inventoryref} id="inventory-container">
-        {items.map((url, i) => (
-          <img key={i} id={`box-${i}`} src={`/assets/${url}.png`} alt="" />
-        ))}
-      </div>
+      
 
       {/*---------------------pause--------------------*/}
-      <Menu pausevalue={pause} onContinue={() => setPause(false)} />
+      <Menu
+        pausevalue={pause}
+        onContinue={() => setPause(false)}
+        onSave={() => refs.saveRef.current?.save()}
+        onLoad={() => refs.saveRef.current?.load()}
+      />
     </div>
   );
 }

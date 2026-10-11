@@ -1,6 +1,45 @@
 //@ts-nocheck
 
 
+export function WallCollision(THREE, ray, land, pos, mx, mz, radius, heights) {
+  const dir = new THREE.Vector3();
+  const origin = new THREE.Vector3();
+  const normal = new THREE.Vector3();
+
+  for (let pass = 0; pass < 2; pass++) {
+    const dist = Math.hypot(mx, mz);
+    if (dist < 1e-6) break;
+
+    dir.set(mx / dist, 0, mz / dist);
+    ray.far = dist + radius;
+
+    for (const h of heights) {
+      origin.set(pos.x, pos.y + h, pos.z);
+      ray.set(origin, dir);
+
+      const hit = ray.intersectObject(land, true)[0];
+      if (!hit || !hit.face) continue;
+
+      normal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
+      if (Math.abs(normal.y) > 0.7) continue;
+      normal.y = 0;
+      normal.normalize();
+      if (normal.dot(dir) > 0) normal.negate();
+
+      const c = -normal.dot(dir);
+      if (c < 1e-3) continue;
+
+      const deficit = radius - (hit.distance - dist) * c;
+      if (deficit > 0) {
+        mx += normal.x * deficit;
+        mz += normal.z * deficit;
+      }
+    }
+  }
+
+  return { x: mx, z: mz };
+}
+
 export function wallslimiter(object3D, objectBox, physics) {
   return (
     object3D.position.y < objectBox.max.y &&
