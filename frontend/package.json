@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "tauri": "tauri" 
+    "tauri": "tauri"
   },
   "dependencies": {
     "@belivvr/aframe-react": "^0.4.2",
@@ -16,7 +16,8 @@
     "aframe-extras": "^7.7.0",
     "next": "16.3.5",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "three-mesh-bvh": "^0.9.16"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

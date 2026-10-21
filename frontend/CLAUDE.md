@@ -7,8 +7,8 @@
 
 ## Current Context
 - **Project**: Escape Room WebVR Game (`frontend`)
-- **Current Feature**: FIX ANIMATION IDLE
-- **Next Feature**: FIX ANIMATION IDLE
+- **Current Feature**: FIX THE ROTATION FROM CHANGE THE POSITION OF CHARECTER
+- **Next Feature**: MAKE THE NPC SET ON CHAIR   chairref1
 
 ## Code Quality Standards
 - Strict TypeScript types (avoid `any`).
