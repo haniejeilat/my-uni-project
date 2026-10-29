@@ -41,10 +41,20 @@ const neutralizeRootMotion = (THREE, model, clips) => {
   const locked = [];
 
   clips.forEach((clip) => {
+    clip.tracks.forEach((t) => {
+      const [, p] = splitTrackName(t.name);
+      if (p !== 'scale') return;
+      const lo = Math.min(...t.values);
+      const hi = Math.max(...t.values);
+      if (lo < 0.99 || hi > 1.01) console.log('[scale]', clip.name, t.name, lo.toFixed(3), hi.toFixed(3));
+      console.log('[tracks]', clip.name, clip.tracks.length);
+    });
+
     clip.tracks = clip.tracks.filter((t) => {
       const [node, prop] = splitTrackName(t.name);
       const rigid =
-        rigidNames.has(node) && (prop === 'position' || prop === 'quaternion' || prop === 'rotation');
+        rigidNames.has(node) &&
+        (prop === 'position' || prop === 'quaternion' || prop === 'rotation' || prop === 'scale');
       if (rigid) removed.push(clip.name + ':' + t.name);
       return !rigid;
     });
@@ -60,6 +70,15 @@ const neutralizeRootMotion = (THREE, model, clips) => {
         for (let i = 0; i < v.length; i += 3) {
           v[i] = f[0];
           v[i + 2] = f[1];
+        }
+        locked.push(clip.name + ':' + t.name);
+      } else if (prop === 'scale') {
+        if (!first[t.name]) first[t.name] = [v[0], v[1], v[2]];
+        const f = first[t.name];
+        for (let i = 0; i < v.length; i += 3) {
+          v[i] = f[0];
+          v[i + 1] = f[1];
+          v[i + 2] = f[2];
         }
         locked.push(clip.name + ':' + t.name);
       } else if (LOCK_ROOT_ROTATION && prop === 'quaternion') {
@@ -80,8 +99,9 @@ const neutralizeRootMotion = (THREE, model, clips) => {
 
   console.info('[rootmotion]', { roots: [...rootNames], rigid: [...rigidNames], removed, locked });
 };
-export const PRISONER_RANGES = { idle: [1, 108], walk: [110, 180], run: [182, 242] };
-export const POLICE_RANGES = { idle: [1, 115], walk: [121, 144], run: [146, 168] };
+
+export const PRISONER_RANGES = { idle: [1, 108], walk: [110, 180], run: [182, 242] , turn180 : [244 , 263]};
+export const POLICE_RANGES = { idle: [1, 115], walk: [150, 183], run: [183, 218], turn180: [218, 237] };
 
 export const setupSubclips = (ref, ranges = PRISONER_RANGES) => {
   const THREE = window.AFRAME.THREE;
@@ -259,21 +279,24 @@ export function NpcMovement(npcmovestates, object3D, Aside, Bside, startnpc, end
 }
 
 export function GravityAndWithJump(landObjecthit, Objectref, physics, dt, GRAVITY, MAX_STEP) {
- 
+  const pos = Objectref.object3D.position;
+  const nextVy = physics.vy - GRAVITY * dt;
+  const nextY = pos.y + nextVy * dt;
+
   if (
     landObjecthit &&
     physics.vy <= 0 &&
-    Objectref.object3D.position.y - landObjecthit.point.y <= MAX_STEP
+    nextY - landObjecthit.point.y <= MAX_STEP
   ) {
-    Objectref.object3D.position.y = landObjecthit.point.y;
+    pos.y = landObjecthit.point.y;
     physics.vy = 0;
     physics.onGround = true;
   } else {
-    physics.vy -= GRAVITY * dt;
-    Objectref.object3D.position.y += physics.vy * dt;
+    physics.vy = nextVy;
+    pos.y = nextY;
     physics.onGround = false;
   }
-}
+};
 
 export function isPlayerInNpcFOV(THREE, npcObject, playerPos, fovDegrees = 90, maxDistance = 30) {
   const npcPos = npcObject.position;
@@ -509,7 +532,7 @@ export function NearMeshes(entries, x, z, r = 4) {
   sourceRef : ref of the entity that already ran setupSubclips (chooseref)
   returns   : { el, mesh, mixer, play, dispose }  (this object IS the NPC "ref")
 ------------------------------------------------------------------*/
-export const spawnNpc = (THREE, sourceRef, sceneEl, { x, y, z, yaw = 0, scale = 0.9, clip = 'idle' }, ranges) => {
+export const spawnNpc = (THREE, sourceRef, sceneEl, { x, y, z, yaw = 0, scale = 0.9, clip = 'idle', patrol = null }, ranges) => {
   const src = sourceRef?.current?.getObject3D('mesh');
   if (!src || !sceneEl || !setupSubclips(sourceRef, ranges) || !src.animations?.length) return null;
 
@@ -530,7 +553,7 @@ export const spawnNpc = (THREE, sourceRef, sceneEl, { x, y, z, yaw = 0, scale = 
     if (current) current.fadeOut(fade);
     current = next;
   };
-  console.log('[spawnNpc]', clip, src.animations.map((c) => c.name));
+
   play(actions[clip] ? clip : src.animations[0].name, 0);
   play(clip, 0);
   current.time = Math.random() * current.getClip().duration;
@@ -553,12 +576,127 @@ export const spawnNpc = (THREE, sourceRef, sceneEl, { x, y, z, yaw = 0, scale = 
   sceneEl.appendChild(el);
   el.setObject3D('mesh', mesh);
 
-    return {
+  return {
     el,
     mesh,
     mixer,
     play,
+    patrolCfg: patrol,
+    spawn: { x, y, z, yaw, scale, clip },
     physics: { vy: 0, onGround: false },
+    dispose: () => {
+      mixer.stopAllAction();
+      mixer.uncacheRoot(mesh);
+      el.remove();
+    },
+  };
+};
+
+/* idle -> turn180 -> walk(walkDistance) -> idle -> turn180 -> walk ... بدون نهاية
+   بتنادى كل frame. cfg: { walkDistance (متر), walkSpeed (متر/ثانية), idleTime (ثواني) } */
+const TURN_DIR = 1; // خليها -1 إذا شكل الدوران معكوس
+export const npcPatrol = (npc, dt, { walkDistance = 8, walkSpeed = 1.2, idleTime = 3, nightYaw } = {}) => {
+  if (!npc.patrolState && nightYaw !== undefined) npc.el.object3D.rotation.y = (nightYaw * Math.PI) / 180;
+  const s = (npc.patrolState = npc.patrolState || { phase: 'idle', t: 0, walked: 0, yaw0: 0, turnDur: 0 });
+  const o = npc.el.object3D;
+  s.t += dt;
+
+  if (s.phase === 'idle') {
+    if (s.t < idleTime) return;
+    s.phase = 'turn';
+    s.t = 0;
+    s.yaw0 = o.rotation.y;
+    s.turnDur = npc.mesh.animations.find((c) => c.name === 'turn180').duration;
+    
+  } else if (s.phase === 'turn') {
+    o.rotation.y = s.yaw0 + TURN_DIR * Math.PI * Math.min(s.t / s.turnDur, 1);
+    if (s.t < s.turnDur) return;
+    s.phase = 'walk';
+    s.t = 0;
+    s.walked = 0;
+    npc.play('walk');
+  } else {
+    const step = Math.min(walkSpeed * dt, walkDistance - s.walked);
+    o.position.x += Math.sin(o.rotation.y) * step;
+    o.position.z += Math.cos(o.rotation.y) * step;
+    s.walked += step;
+    if (s.walked < walkDistance) return;
+    s.phase = 'idle';
+    s.t = 0;
+    npc.play('idle');
+  }
+};
+
+/*------------------------------------------------------------------
+  spawnDoor - brand-new static door cloned from an already loaded model
+  (same idea as spawnNpc, nothing animated: geometry + materials are shared).
+  sourceRef : ref of the entity that holds the door glb (celldoorref)
+  spawn     : { x, y, z, yaw, scale, ... }  x / z = centre, y = bottom of the door
+  returns   : { el, mesh, spawn, dispose }
+  Open a door = hide it (el.object3D.visible = false), same as the cell door.
+------------------------------------------------------------------*/
+export const spawnDoor = (THREE, sourceRef, sceneEl, spawn) => {
+  const { x, y, z, yaw = 0, scale = 1 } = spawn;
+  const src = sourceRef?.current?.getObject3D('mesh');
+  if (!src || !sceneEl) return null;
+
+  const mesh = src.clone(true);
+  mesh.visible = true;
+  mesh.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(mesh);
+  const c = box.getCenter(new THREE.Vector3());
+  mesh.position.x -= c.x;
+  mesh.position.y -= box.min.y;
+  mesh.position.z -= c.z;
+
+  const el = document.createElement('a-entity');
+  el.setAttribute('position', { x, y, z });
+  el.setAttribute('rotation', { x: 0, y: yaw, z: 0 });
+  el.setAttribute('scale', { x: scale, y: scale, z: scale });
+  sceneEl.appendChild(el);
+  el.setObject3D('mesh', mesh);
+
+  /* A-Frame applies the attributes a moment later, the collision boxes need the
+     final transform right now, so it is also written straight on the object3D */
+  el.object3D.position.set(x, y, z);
+  el.object3D.rotation.set(0, THREE.MathUtils.degToRad(yaw), 0);
+  el.object3D.scale.setScalar(scale);
+  el.object3D.updateMatrixWorld(true);
+
+  return {
+    el,
+    mesh,
+    spawn,
+    dispose: () => el.remove(),
+  };
+};
+
+export const sleepnpcs = [];
+
+export const spawnSleep = (THREE, sourceRef, sceneEl, { x, y, z, yaw = 0, scale = 1, clip = 'sleep' }) => {
+  const src = sourceRef?.current?.getObject3D('mesh');
+  if (!src || !sceneEl || !src.animations?.length) return null;
+
+  const mesh = cloneSkinned(src);
+  mesh.animations = src.animations;
+
+  const mixer = new THREE.AnimationMixer(mesh);
+  const action = mixer.clipAction(src.animations.find((c) => c.name === clip) || src.animations[0]);
+  action.play();
+  action.time = Math.random() * action.getClip().duration;
+  mixer.update(0);
+
+  const el = document.createElement('a-entity');
+  el.setAttribute('position', { x, y, z });
+  el.setAttribute('rotation', { x: 0, y: yaw, z: 0 });
+  el.setAttribute('scale', { x: scale, y: scale, z: scale });
+  sceneEl.appendChild(el);
+  el.setObject3D('mesh', mesh);
+
+  return {
+    el,
+    mesh,
+    mixer,
     dispose: () => {
       mixer.stopAllAction();
       mixer.uncacheRoot(mesh);

@@ -12,10 +12,13 @@ import {
   setAnimation,
   POLICE_RANGES,
   spawnNpc,
-  NearMeshes
+  spawnDoor,
+  npcPatrol,
+  NearMeshes, 
+  spawnSleep
 } from "@/app/utils/vrPhysics/page";
 import { computeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
-export function useVRGameLoop(refs, itemsref, setItems, pauseRef, timerRef, setPause, setinterialtimer , setChatStep) {
+export function useVRGameLoop(refs, itemsref, setItems, pauseRef, timerRef, setPause, setinterialtimer , setChatStep, setPhase, setNpcList) {
   /*------------Thermometer-----------*/
     const progress_firstbar = useRef(0);
     const progress_secondbar = useRef(0);
@@ -28,10 +31,10 @@ export function useVRGameLoop(refs, itemsref, setItems, pauseRef, timerRef, setP
     const {
       walkref, camref, inventoryref,
       landref, saveRef, chooseref ,solidbarref , solidbarref1 , solidbarref2 , rasptool , brokensolidref ,brokensolidref1,
-      progressfillref , alertfillref , roperef , coverref , chairref1 , chairref2 , chairref3 , NPC1pressE , npcpoliceref
-    } = refs;
+      progressfillref , alertfillref , roperef , coverref , chairref1 , chairref2 , chairref3 , NPC1pressE , npcpoliceref ,npcsetref  , celldoorref, 
+    sleepref , buildingdoorref } = refs;
 
-
+    
     const footstepSounds = [
       new Audio('/assets/playeraudio/pl_step1.wav'),
       new Audio('/assets/playeraudio/pl_step2.wav'),
@@ -64,19 +67,141 @@ export function useVRGameLoop(refs, itemsref, setItems, pauseRef, timerRef, setP
     let animationRetry = 0;
 
     const npcs = [];
+        let listOpen = false;
+    const openList = () => {
+      listOpen = true;
+      setNpcList(true);
+      if (document.pointerLockElement) document.exitPointerLock();
+    };
+    const closeList = () => {
+      listOpen = false;
+      setNpcList(false);
+      const canvas = document.querySelector('a-scene canvas');
+      if (canvas && document.pointerLockElement !== canvas) {
+        const r = canvas.requestPointerLock();
+        if (r && r.catch) r.catch(() => {});
+      }
+    };
     const policeNpcs = [];
     let npcsSpawned = false;
     const NPC_SPAWNS = [
-      { x: 4.6, y: 2.6, z: 0, yaw: 180, clip: 'idle' },
-    ];
+      { x: 4.6, y: 2.6, z: 0, yaw: 180, clip: 'idle', dealer: false },
+      { x: -25.31 , y : 0 , z : -17.69 ,yaw : 270 , clip : 'idle', patrol: { walkDistance: 8, walkSpeed: 1.2, idleTime: 3 }, dealer: true },
+       ];
 
     let policeSpawned = false;
     const POLICE_SPAWNS = [
-      { x: 0.85, y: 2.6, z: -5.11, yaw: 50, scale: 0.9, clip: 'idle' },
+      { x: 0.85, y: 2.8, z: -5.11, yaw: 50, scale: 0.9, clip: 'idle' , patrol: { walkDistance: 12, walkSpeed: 1.2, idleTime: 3 ,  nightYaw: 230  } },
       { x: 5.88, y: 2.6, z: -10.56, yaw: 50, scale: 0.9, clip: 'idle' },
       { x: 5.07, y: 0.09, z: -9.15, yaw: 50, scale: 0.9, clip: 'idle' },
       { x: 2.42, y: 0.09, z: -6.12, yaw: 50, scale: 0.9, clip: 'idle' },
+      { x: -36.87, y: 0, z: -9.28, yaw: 140, scale: 0.9, clip: 'idle' },
+      { x: -37.37, y: 0, z:-31.12, yaw: 50, scale: 0.9, clip: 'idle' },
+      
     ];
+
+
+    const doors = [];
+    let doorsSpawned = false;
+    const DOOR_SPAWNS = [
+  { x: 3.95, y: 2.73, z: -1.05, yaw: -40, scale: 1, cell: true, src: 'cell', clip: 'door_lambert24_0.004Action.001' },
+  { x: 3.19, y: 0.09, z:-8.95, yaw: -35, scale: 0.8, cell: true, src: 'building', clip : 'doorAction' },
+  { x: 1, y: 0.09, z:-31.88, yaw: 75, scale: 0.8, cell: true, src: 'building', clip : 'doorAction' },
+  { x: 16.88, y: 0.09, z:2.75, yaw: -40, scale: 0.8, cell: true, src: 'building', clip : '' },
+  { x: 12.67, y: 0.09, z:-45.4, yaw: 50, scale: 0.8, cell: true, src: 'building', clip : '' },
+  { x: -50.73, y: 0.09, z:3.2, yaw: 50, scale: 0.8, cell: true, src: 'building', clip : '' },
+  { x: -52.4, y: 0.09, z:-42.15, yaw: -40, scale: 0.8, cell: true, src: 'building', clip : '' },
+  { x: -39.6, y: 0.09, z:-29.8, yaw: -200, scale: 0.8, cell: true, src: 'building', clip : 'doorAction'},
+  { x: -38.25, y: 0.09, z:-9.7, yaw: -120, scale: 0.8, cell: true, src: 'building', clip : 'doorAction'},
+];
+
+
+   const sleepernpcs = [];
+   let sleepSpawned = false;
+    const SLEEP_SPAWNS = [
+      { x: 10.58, y: 3.22, z: -10.58, yaw: -35, scale: 1, clip: 'sleep' },
+      { x: 12.48, y: 3.22, z: -8.88, yaw: -35, scale: 1, clip: 'sleep' },
+      { x: 14.5, y: 3.22, z: -7.31, yaw: -35, scale: 1, clip: 'sleep' },
+      { x: 16.2, y: 3.22, z: -5.58, yaw: -35, scale: 1, clip: 'sleep' },
+      { x: 16.2, y: 0.62, z: -5.58, yaw: -35, scale: 1, clip: 'sleep' },
+      { x: 10.58, y: 0.62, z: -10.58, yaw: -35, scale: 1, clip: 'sleep' },
+      { x: 12.48, y: 0.62, z: -8.88, yaw: -35, scale: 1, clip: 'sleep' },
+      { x: 14.5, y: 0.62, z: -7.31, yaw: -35, scale: 1, clip: 'sleep' },
+    ];
+
+    /*--------------------day / night cycle-----------------*/
+const DAY_TIME = 90;
+const NIGHT_TIME = 30;
+const SLEEP_KEY = 'KeyZ';
+const CELL_SPAWN = { x: 3.4, y: 2.6, z: 0 };
+let phase = 'night';
+let phaseT = NIGHT_TIME;
+let shownSec = NIGHT_TIME;
+
+
+const setDoor = (open) => {
+  const el = celldoorref?.current;
+  if (el) el.object3D.visible = !open;
+  doors.forEach((d) => {
+    if (!d.spawn.cell) return;
+    d.el.object3D.visible = true;
+    if (d.mixer) { d.mixer.stopAllAction(); d.mixer.uncacheRoot(d.mesh); d.mixer = null; }
+    if (!open || !d.clip) return;
+    d.mixer = new THREE.AnimationMixer(d.mesh);
+    const action = d.mixer.clipAction(d.clip);
+    action.setLoop(THREE.LoopOnce, 1);
+    action.clampWhenFinished = true;
+    action.play();
+  });
+};
+
+const setSleepers = (show) => sleepernpcs.forEach((n) => { n.el.object3D.visible = show; });
+
+const resetNpc = (n) => {
+  const s = n.spawn;
+  if (!s) return;
+  n.el.setAttribute('position', { x: s.x, y: s.y, z: s.z });
+  n.el.setAttribute('rotation', { x: 0, y: s.yaw ?? 0, z: 0 });
+  n.physics.vy = 0;
+  n.patrolState = null;
+  n.play(s.clip ?? 'idle', 0);
+};
+
+const respawnPlayer = () => {
+  const p = walkref.current.object3D;
+  p.position.set(CELL_SPAWN.x, CELL_SPAWN.y, CELL_SPAWN.z);
+  yaw = 0;
+  pitch = 0;
+  p.rotation.y = 0;
+  camref.current.object3D.rotation.x = 0;
+  playerPhysics.vy = 0;
+  nx0 = Infinity;
+};
+
+const startNight = () => {
+  phase = 'night';
+  phaseT = NIGHT_TIME;
+  shownSec = NIGHT_TIME;
+  setPhase('night');
+  setinterialtimer(NIGHT_TIME);
+  setChatStep(-1);
+  closeList();
+  respawnPlayer();
+  setDoor(false);
+  setSleepers(true);
+};
+
+const startDay = () => {
+  phase = 'day';
+  phaseT = DAY_TIME;
+  shownSec = DAY_TIME;
+  setPhase('day');
+  setinterialtimer(DAY_TIME);
+  npcs.forEach(resetNpc);
+  policeNpcs.forEach(resetNpc);
+  setDoor(true);
+  setSleepers(false);
+};
 
     /*--------------------body auto-fit (feet on ground, centered under camera)-----------------*/
     const BODY_BACK = 0.3;
@@ -178,6 +303,36 @@ export function useVRGameLoop(refs, itemsref, setItems, pauseRef, timerRef, setP
   nx0 = Infinity;
 };
 
+let doorPrepared = false;
+
+const prepareDoor = () => {
+  const el = celldoorref?.current;
+  const mesh = el?.getObject3D('mesh');
+  if (!mesh) return;
+  doorPrepared = true;
+  el.object3D.updateMatrixWorld(true);
+  mesh.traverse((o) => {
+    if (!o.isMesh) return;
+    [].concat(o.material).forEach((m) => (m.side = THREE.DoubleSide));
+    if (!o.geometry.boundsTree) computeBoundsTree.call(o.geometry);
+    o.raycast = acceleratedRaycast;
+    landMeshes.push({ mesh: o, box: new THREE.Box3().setFromObject(o) });
+  });
+  nx0 = Infinity;
+};
+
+const prepareSpawnedDoor = (d) => {
+  d.el.object3D.updateMatrixWorld(true);
+  d.mesh.traverse((o) => {
+    if (!o.isMesh) return;
+    [].concat(o.material).forEach((m) => (m.side = THREE.DoubleSide));
+    if (!o.geometry.boundsTree) computeBoundsTree.call(o.geometry);
+    o.raycast = acceleratedRaycast;
+    landMeshes.push({ mesh: o, box: new THREE.Box3().setFromObject(o) });
+  });
+  nx0 = Infinity;
+};
+
     const JUMP = 24; // see GRAVITY
     let JumpEffects = false;
 
@@ -237,12 +392,28 @@ export function useVRGameLoop(refs, itemsref, setItems, pauseRef, timerRef, setP
     const down = (e) => {
       keys[e.code] = true;
 
+        if (listOpen) {
+        if (!e.repeat && (e.code === 'KeyE' || e.code === 'Escape')) closeList();
+        return;
+      }
+
       if (cine && e.code !== 'Escape') return;
       
 
       if (NPC1pressE.current && e.code !== 'Escape') return;
 
-      if (e.code === 'KeyE' && npcs.some((n) => IsHovered({ current: n.el }, NPC_HOVERDIST))) {
+      if (e.code === SLEEP_KEY && phase === 'night') {
+  startDay();
+  return;
+}
+
+
+     if (e.code === 'KeyE' && (npcs.some((n) => n.isDealer && IsHovered({ current: n.el }, NPC_HOVERDIST)) || IsHovered(npcsetref, NPC_HOVERDIST))) {
+        openList();
+        return;
+      }
+
+      if (e.code === 'KeyE' && phase === 'night' && !IsHovered(solidbarref, HOVERDIST) && !IsHovered(solidbarref1, HOVERDIST) && !IsHovered(solidbarref2, HOVERDIST)) {
         setChatStep(0);
         return;
       }
@@ -315,6 +486,8 @@ export function useVRGameLoop(refs, itemsref, setItems, pauseRef, timerRef, setP
     };
 
     const onClick = () => {
+      if (listOpen) return;
+
       const canvas = document.querySelector('a-scene canvas');
 
       if (canvas && document.pointerLockElement !== canvas) {
@@ -341,7 +514,8 @@ export function useVRGameLoop(refs, itemsref, setItems, pauseRef, timerRef, setP
         const p = walkref.current.object3D;
         localStorage.setItem(SAVE_KEY, JSON.stringify({
           player: { x: p.position.x, y: p.position.y, z: p.position.z, yaw, pitch },
-          timer: timerRef.current,
+          timer: Math.ceil(phaseT),
+          phase: phase,
           items: itemsref.current,
         }));
         return true;
@@ -361,12 +535,19 @@ export function useVRGameLoop(refs, itemsref, setItems, pauseRef, timerRef, setP
         camref.current.object3D.rotation.x = pitch;
         playerPhysics.vy = 0;
         setItems(s.items ?? []);
-        if (typeof s.timer === "number") setinterialtimer(s.timer);
+        phase = s.phase === 'night' ? 'night' : 'day';
+        const maxT = phase === 'day' ? DAY_TIME : NIGHT_TIME;
+        phaseT = typeof s.timer === 'number' ? Math.min(s.timer, maxT) : maxT;
+        shownSec = Math.ceil(phaseT);
+        setPhase(phase);
+        setinterialtimer(shownSec);
+        setDoor(phase === 'day');
+        setSleepers(phase === 'night');
         return true;
       } catch { return false; }
     };
 
-    saveRef.current = { save, load };
+    saveRef.current = { save, load, closeList };
     let pendingLoad = new URLSearchParams(window.location.search).get('continue') === '1';
 
     
@@ -534,6 +715,17 @@ const npcGround = (npc, dt) => {
         return;
       }
 
+      if (!NPC1pressE.current) phaseT -= dt;
+        const sec = Math.max(Math.ceil(phaseT), 0);
+        if (sec !== shownSec) {
+          shownSec = sec;
+          setinterialtimer(sec);
+        }
+        if (phaseT <= 0) {
+          if (phase === 'day') startNight();
+          else startDay();
+        }
+
       if (!keys.KeyE && alertLevel > 0) addAlert(-ALERT_DECAY * dt);
 
       hoverTimer += dt;
@@ -563,8 +755,8 @@ const npcGround = (npc, dt) => {
           policeSpawned = true;
             POLICE_SPAWNS.forEach((s) => {
             const npc = spawnNpc(THREE, npcpoliceref, scn, s, POLICE_RANGES);
-            if (npc) policeNpcs.push(npc);
-            console.log('[police] spawned', !!npc);
+            if (npc) { npc.nightOnly = true; npcs.push(npc); }
+            
             if (npc) setTimeout(() => {
               npc.el.object3D.updateMatrixWorld(true);
               const b = new THREE.Box3().setFromObject(npc.mesh);
@@ -580,10 +772,22 @@ const npcGround = (npc, dt) => {
           npcsSpawned = true;
           NPC_SPAWNS.forEach((s) => {
             const npc = spawnNpc(THREE, chooseref, scn, s);
-            if (npc) npcs.push(npc);
+            if (npc) { npc.patrolCfg = s.patrol; npc.spawn = s; npc.isDealer = !!s.dealer; npcs.push(npc); }  
           });
         }
       }
+
+      if (!sleepSpawned) {
+      const scn = document.querySelector('a-scene');
+      if (scn && sleepref?.current?.getObject3D('mesh')) {
+        sleepSpawned = true;
+        SLEEP_SPAWNS.forEach((s) => {
+          const n = spawnSleep(THREE, sleepref, scn, s);
+          if (n) sleepernpcs.push(n);
+          });
+          setSleepers(phase === 'night');
+      }
+}
 
       if (!bodyFitted && (clipsReady || animationRetry >= 300)) {
         bodyFitTimer += dt;
@@ -607,6 +811,26 @@ const npcGround = (npc, dt) => {
       }
       if (!chairsPrepared) prepareChairs();
 
+      if (!doorPrepared) prepareDoor();
+
+if (!doorsSpawned) {
+  const scn = document.querySelector('a-scene');
+  if (scn && celldoorref?.current?.getObject3D('mesh') && buildingdoorref?.current?.getObject3D('mesh')) {
+    doorsSpawned = true;
+    DOOR_SPAWNS.forEach((s) => {
+      const srcRef = s.src === 'building' ? buildingdoorref : celldoorref;
+      const d = spawnDoor(THREE, srcRef, scn, s);
+      if (d) {
+        const anims = srcRef.current.getObject3D('mesh').animations;
+        d.clip = s.clip ? (anims.find((c) => c.name === s.clip) || anims[0]) : null;
+        prepareSpawnedDoor(d);
+        doors.push(d);
+      }
+    });
+    setDoor(phase === 'day');
+  }
+}
+
       if (land) {
         const p = walkref.current.object3D.position;
         refreshNearby(p);
@@ -619,7 +843,7 @@ const npcGround = (npc, dt) => {
           HeadRay.intersectObjects(nearby, false, probeHits);
           if (probeHits.length) playerPhysics.vy = 0;
         }
-
+        GroundRay.far = STEP + MAX_STEP + 0.1 + Math.max(0, -(playerPhysics.vy - GRAVITY * dt) * dt);
         let hit = null;
         for (let i = 0; i < GROUND_PROBES.length; i++) {
           probeOrigin.set(p.x + GROUND_PROBES[i][0], p.y + STEP, p.z + GROUND_PROBES[i][1]);
@@ -643,8 +867,13 @@ const npcGround = (npc, dt) => {
       }
 
       if (land) {
-        for (let i = 0; i < npcs.length; i++) npcGround(npcs[i], dt);
+                for (let i = 0; i < npcs.length; i++) {
+          if (npcs[i].patrolCfg && (phase === 'night' || !npcs[i].nightOnly)) npcPatrol(npcs[i], dt, npcs[i].patrolCfg);
+          else npcGround(npcs[i], dt);
+        }
         for (let i = 0; i < policeNpcs.length; i++) npcGround(policeNpcs[i], dt);
+        if (phase === 'night') for (let i = 0; i < sleepernpcs.length; i++) sleepernpcs[i].mixer.update(dt);
+       for (let i = 0; i < doors.length; i++) doors[i].mixer?.update(dt);
       }
 
       const X = NPC1pressE.current ? 0 : (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
@@ -698,17 +927,21 @@ const npcGround = (npc, dt) => {
         playerPhysics.nx = p.x;
         playerPhysics.nz = p.z;
       }
-      console.log(walkref.current.object3D.position.x)
-      console.log(walkref.current.object3D.position.y)
-      console.log(walkref.current.object3D.position.z)
-    };
 
+      console.log(walkref.current.object3D.position.x);
+      console.log(walkref.current.object3D.position.y);
+      console.log(walkref.current.object3D.position.z);
+
+    };
+    
     raf = requestAnimationFrame(loop);
 
     return () => {
       cancelAnimationFrame(raf);
       npcs.forEach((n) => n.dispose());
       policeNpcs.forEach((n) => n.dispose());
+      sleepernpcs.forEach((n) => n.dispose());
+      doors.forEach((d) => d.dispose());
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);
       window.removeEventListener('mousemove', onMouseMovenormal);

@@ -1,6 +1,6 @@
 //@ts-nocheck
 import React,{useRef} from 'react';
-export default function MainComponents({ walkref , chooseref , npcref , camref , landref , solidbarref , solidbarref1 , solidbarref2 , rasptool , brokensolidref , brokensolidref1 , roperef , coverref ,chairref1 , chairref2 , chairref3 , npcpoliceref}: any) {
+export default function MainComponents({ walkref , chooseref , npcref , camref , landref , solidbarref , solidbarref1 , solidbarref2 , rasptool , brokensolidref , brokensolidref1 , roperef , coverref ,chairref1 , chairref2 , chairref3 , npcpoliceref , npcsetref, celldoorref , sleepref , buildingdoorref}: any) {
     return (
         <a-scene
         embedded
@@ -9,7 +9,7 @@ export default function MainComponents({ walkref , chooseref , npcref , camref ,
         <a-assets>
       <a-asset-item
         id="landModel"
-        src="/assets/finalmap1.2.glb"
+        src="/assets/finalmap1.1.glb"
       ></a-asset-item>
 
       <a-asset-item
@@ -86,6 +86,28 @@ export default function MainComponents({ walkref , chooseref , npcref , camref ,
         <a-asset-item
         id = "nestedpoliceModel"
         src = "/assets/police/policenestedaction.glb"
+        ></a-asset-item>
+
+        
+    
+        <a-asset-item
+        id = "settalkModel"
+        src = "/assets/prisoner/settalk.glb"
+        ></a-asset-item>
+
+        <a-asset-item
+          id = "celldoorModel"
+          src = "/assets/Doors/movingcelldoor.glb"
+        ></a-asset-item>
+
+        <a-asset-item
+        id = "sleepModel"
+        src = "/assets/prisoner/sleep.glb"
+        ></a-asset-item>
+
+        <a-asset-item
+          id = "buildingcelldoorModel"
+          src = "/assets/Doors/outsidedoor1.glb"
         ></a-asset-item>
     </a-assets>
 
@@ -221,8 +243,34 @@ export default function MainComponents({ walkref , chooseref , npcref , camref ,
       gltf-model = "#nestedpoliceModel"
       visible = "false"
       ></a-entity>
-
-      </a-scene>
       
+    <a-entity
+    ref = {npcsetref}
+    gltf-model = "#settalkModel"
+    scale = "1 1 1"
+    position = "-11.3 0 -24.61"
+    rotation = "0 270 0"
+    animation-mixer = "clip: set; loop: repeat"
+    ></a-entity>
+
+    <a-entity
+      ref = {celldoorref}
+      gltf-model = "#celldoorModel"
+      
+    ></a-entity>
+    
+      <a-entity
+  ref = {sleepref}
+  gltf-model = "#sleepModel"
+  visible = "false"
+></a-entity>
+
+<a-entity
+  ref = {buildingdoorref}
+  gltf-model = "#buildingcelldoorModel"
+  visible = "false"
+></a-entity>
+      </a-scene>
+     
     );
 }

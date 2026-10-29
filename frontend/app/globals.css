@@ -5,7 +5,7 @@
 }
 
 /*--------------------inventory--------------------*/
-#inventory-container{
+#inventory-container , #npc-list-container{
  display: none;
 grid-template-columns: repeat(4, minmax(0, 1fr));
  grid-template-rows: repeat(4, minmax(0, 1fr));

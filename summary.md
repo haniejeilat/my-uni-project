@@ -47,6 +47,10 @@ frontend/
         page.tsx
       chatnpc/
         page.tsx
+      dealer/
+        page.tsx
+      intro/
+        page.tsx
       thermometer/
         page.tsx
       page.tsx
@@ -60,6 +64,8 @@ frontend/
     Play/
       page.tsx
     utils/
+      dealer/
+        page.ts
       vrPhysics/
         page.ts
     globals.css
@@ -121,11 +127,14 @@ frontend/
         idle.glb
         jump.glb
         nestedActionFinalprisoner1.1.glb
+        nestedActionFinalprisoner1.2.glb
         nestedactions.glb
         Prisoner_02.fbx
         prisoner.glb
-        set&talk.glb
+        settalk.glb
+        sleep.glb
         Talking.fbx
+        training.glb
         Untitled.fbx
         walk.glb
       tools/
@@ -141,20 +150,27 @@ frontend/
         old_key.glb
         old_key.png
         rasp.png
+        razerblades.png
+        smoothwood.jpg
         solid.glb
         solidwindow.glb
         toothpaste.glb
+        toothpaste.png
+        woodscraps.jpg
       electreicalSwitch.glb
       finalmap.glb
       finalmap1.1.glb
       finalmap1.2.glb
       finalwatchtower.glb
       mainmap.glb
+      map.jpg
       maya2sketchfab.fbx
       menu.jpg
       stair_low_poly.glb
       watchtower.glb
       workshop.glb
+    data/
+      dialogues.json
   src-tauri/
     capabilities/
       default.json
@@ -195,27 +211,454 @@ frontend/
 <files>
 This section contains the contents of the repository's files.
 
-<file path="frontend/app/Components/chatnpc/page.tsx">
-export default function NpcChat({ sentence }: { sentence: string }) {
-    return (
-        <div style={{ position: "absolute", width: "98%", height: "30%", zIndex: 111, bottom: 0, left: "50%", transform: "translateX(-50%)", background: "rgb(0, 0, 0, 0.2)", color: "orange", fontFamily: "Courier New, monospace", fontSize: 24, padding: 20 }}>
-            {sentence}
+<file path="frontend/app/Components/dealer/page.tsx">
+'use client';
+import { useEffect, useRef, useState } from 'react';
+import type { CSSProperties, Dispatch, SetStateAction } from 'react';
+import {
+  buy,
+  canBuy,
+  countOf,
+  describeItem,
+  getDealer,
+  groupItems,
+  itemKey,
+  moveItem,
+} from '@/app/utils/dealer/page';
+import type { Deal, Trade, Zone } from '@/app/utils/dealer/page';
+
+type DealerProps = {
+  dealerId: number;
+  items: string[];
+  setItems: Dispatch<SetStateAction<string[]>>;
+  stock: string[];
+  setStock: Dispatch<SetStateAction<string[]>>;
+  onClose: () => void;
+};
+
+const rootStyle: CSSProperties = {
+  display: 'flex',
+  gap: 12,
+  padding: 12,
+  width: '90%',
+  height: '80%',
+  background: 'rgba(0, 0, 0, 0.75)',
+  color: 'orange',
+  fontFamily: 'Courier New, monospace',
+  fontSize: 14,
+};
+
+const colStyle = (grow: number): CSSProperties => ({
+  flex: grow,
+  minWidth: 0,
+  overflowY: 'auto',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 8,
+});
+
+const gridStyle: CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 6 };
+
+const headStyle: CSSProperties = { fontSize: 16, fontWeight: 700, borderBottom: '2px solid orange', paddingBottom: 4 };
+
+/* one deal = one row: label  result  =  costs ...  BUY */
+const dealStyle: CSSProperties = {
+  border: '2px solid #fff',
+  borderRadius: 8,
+  padding: 4,
+  display: 'flex',
+  flexWrap: 'wrap',
+  alignItems: 'center',
+  gap: 4,
+};
+
+const btnStyle = (enabled: boolean): CSSProperties => ({
+  padding: '8px 12px',
+  fontFamily: 'inherit',
+  fontSize: 14,
+  fontWeight: 700,
+  color: enabled ? '#000' : '#888',
+  background: enabled ? 'orange' : 'rgba(255,255,255,0.1)',
+  border: 'none',
+  borderRadius: 8,
+  cursor: enabled ? 'pointer' : 'not-allowed',
+});
+
+function Tile({
+  item,
+  badge,
+  ok,
+  small,
+  onClick,
+}: {
+  item: string;
+  badge?: string;
+  ok?: boolean;
+  small?: boolean;
+  onClick?: () => void;
+}) {
+  const { name, img } = describeItem(item);
+  const box = small ? 54 : 84;
+  const pic = small ? 26 : 48;
+  return (
+    <button
+      onClick={onClick}
+      title={name}
+      style={{
+        width: box,
+        minHeight: box,
+        flexShrink: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 1,
+        padding: small ? 2 : 4,
+        background: 'rgba(255, 255, 255, 0.08)',
+        border: `2px solid ${ok ? '#2ecc71' : '#fff'}`,
+        borderRadius: 8,
+        color: 'orange',
+        fontFamily: 'inherit',
+        fontSize: small ? 9 : 11,
+        lineHeight: 1.1,
+        cursor: onClick ? 'pointer' : 'default',
+      }}
+    >
+      {img && <img src={img} alt={name} style={{ width: pic, height: pic, objectFit: 'contain' }} />}
+      <span>{name}</span>
+      {badge && <span style={{ color: ok ? '#2ecc71' : '#fff' }}>{badge}</span>}
+    </button>
+  );
+}
+
+export default function Dealer({ dealerId, items, setItems, stock, setStock, onClose }: DealerProps) {
+  const dealer = getDealer(dealerId);
+  const [resource, setResource] = useState<string[]>([]);
+
+  /* anything still staged when the shop closes goes back to the inventory */
+  const resourceRef = useRef<string[]>([]);
+  resourceRef.current = resource;
+  useEffect(
+    () => () => {
+      if (resourceRef.current.length) setItems((s) => [...s, ...resourceRef.current]);
+    },
+    [setItems],
+  );
+
+  const trade: Trade = { inventory: items, dealer: stock, resource };
+
+  const apply = (next: Trade) => {
+    setItems(next.inventory);
+    setStock(next.dealer);
+    setResource(next.resource);
+  };
+
+  const move = (from: Zone, to: Zone, key: string) => apply(moveItem(trade, from, to, key));
+
+  const onBuy = (deal: Deal) => {
+    const next = buy(trade, deal);
+    if (next) apply(next);
+  };
+
+  return (
+    <div id="npc-list-container" style={rootStyle}>
+      <section style={colStyle(1)}>
+        <div style={headStyle}>INVENTORY</div>
+        <div style={gridStyle}>
+          {items.length === 0 && <span>-</span>}
+          {groupItems(items).map(([key, n]) => (
+            <Tile key={key} item={key} badge={`x${n}`} onClick={() => move('inventory', 'resource', key)} />
+          ))}
         </div>
-    );
+        <span style={{ fontSize: 11 }}>click an item to put it up as resource</span>
+      </section>
+
+      <section style={colStyle(2.2)}>
+        <div style={headStyle}>{dealer.name.toUpperCase()}</div>
+        {dealer.deals.map((deal) => {
+          const resultKey = itemKey(deal.result);
+          const inStock = countOf(stock, resultKey);
+          const can = canBuy(trade, deal);
+          return (
+            <div key={deal.label} style={dealStyle}>
+              <span style={{ fontWeight: 700, width: 14, textAlign: 'center' }}>{deal.label}</span>
+              <Tile small item={resultKey} badge={`x${inStock}`} ok={inStock > 0} />
+              <span>=</span>
+              {deal.cost.map(({ id, qty }) => {
+                const key = itemKey(id);
+                const staged = countOf(resource, key);
+                return (
+                  <Tile
+                    key={id}
+                    small
+                    item={key}
+                    badge={`${staged}/${qty}`}
+                    ok={staged >= qty}
+                    onClick={() => move('inventory', 'resource', key)}
+                  />
+                );
+              })}
+              <button
+                disabled={!can}
+                onClick={() => onBuy(deal)}
+                style={{ ...btnStyle(can), marginLeft: 'auto', padding: '6px 10px', fontSize: 12 }}
+              >
+                BUY
+              </button>
+            </div>
+          );
+        })}
+        <div style={headStyle}>STOCK</div>
+        <div style={gridStyle}>
+          {stock.length === 0 && <span>-</span>}
+          {groupItems(stock).map(([key, n]) => (
+            <Tile key={key} small item={key} badge={`x${n}`} />
+          ))}
+        </div>
+      </section>
+
+      <section style={colStyle(1)}>
+        <div style={headStyle}>RESOURCE</div>
+        <div style={gridStyle}>
+          {resource.length === 0 && <span>-</span>}
+          {groupItems(resource).map(([key, n]) => (
+            <Tile key={key} item={key} badge={`x${n}`} onClick={() => move('resource', 'inventory', key)} />
+          ))}
+        </div>
+        <span style={{ fontSize: 11 }}>click to take it back</span>
+        <button onClick={onClose} style={btnStyle(true)}>
+          CLOSE [E]
+        </button>
+      </section>
+    </div>
+  );
 }
 </file>
 
-<file path="frontend/app/Components/thermometer/page.tsx">
-export default function Thermometer({ fillref, color, label, left }:any) {
+<file path="frontend/app/Components/intro/page.tsx">
+'use client';
+import { useEffect, useRef, useState } from 'react';
+
+const MAP_IMG = '/assets/map.jpg'; // حط صورة الخريطة هون: public/assets/map.jpg
+const BLACK = 1500;  // ms شاشة سودا كاملة
+const REVEAL = 3500; // ms الأسود بنزل (rgba) والخريطة بتبين بلونها الطبيعي
+const GRAY = 3500;   // ms اللون بيتلاشى (أبيض وأسود) + العنوان بيوضح ببطء
+const HOLD = 2000;   // ms العنوان واضح
+const OUT = 2000;    // ms رجوع الكاميرا للاعب
+
+export default function Intro({ onDone }: { onDone: () => void }) {
+  const [step, setStep] = useState(0); // 0 أسود | 1 خريطة بلونها | 2 أبيض وأسود + عنوان | 3 خروج
+  const done = useRef(onDone);
+  done.current = onDone;
+
+  useEffect(() => {
+    const t = [
+      setTimeout(() => setStep(1), BLACK),
+      setTimeout(() => setStep(2), BLACK + REVEAL),
+      setTimeout(() => setStep(3), BLACK + REVEAL + GRAY + HOLD),
+      setTimeout(() => done.current(), BLACK + REVEAL + GRAY + HOLD + OUT),
+    ];
+    const skip = () => done.current();
+    window.addEventListener('keydown', skip);
+    window.addEventListener('pointerdown', skip);
+    return () => {
+      t.forEach(clearTimeout);
+      window.removeEventListener('keydown', skip);
+      window.removeEventListener('pointerdown', skip);
+    };
+  }, []);
+
   return (
-    <div style={{ position: 'absolute', top: 20, left, zIndex: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'none', color: 'orange', fontFamily: 'Courier New, monospace', fontSize: 12 }}>
-      <div style={{ width: 18, height: 160, background: 'rgba(0,0,0,0.4)', border: '2px solid #fff', borderRadius: '9px 9px 0 0', overflow: 'hidden', display: 'flex', alignItems: 'flex-end' }}>
-        <div ref={fillref} style={{ width: '100%', height: '0%', background: color, transition: 'height 0.15s linear' }} />
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        zIndex: 100,
+        backgroundColor: '#000',
+        opacity: step === 3 ? 0 : 1,
+        transition: `opacity ${OUT}ms ease-in-out`,
+      }}
+    >
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          backgroundImage: `url(${MAP_IMG})`,
+          backgroundPosition: 'center',
+          backgroundSize: 'cover',
+          backgroundRepeat: 'no-repeat',
+          filter: `grayscale(${step >= 2 ? 1 : 0})`,
+          transition: `filter ${GRAY}ms ease-in-out`,
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          backgroundColor: `rgba(0, 0, 0, ${step === 0 ? 1 : 0.4})`,
+          transition: `background-color ${REVEAL}ms ease-in-out`,
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          pointerEvents: 'none',
+        }}
+      >
+        <span
+          style={{
+            color: '#ff6a00',
+            fontFamily: "'Franklin Gothic Medium', 'Arial Narrow', Arial, sans-serif",
+            fontWeight: 700,
+            fontSize: 'clamp(40px, 8vw, 120px)',
+            letterSpacing: '0.2em',
+            paddingLeft: '0.2em',
+            textShadow: '0 0 24px rgba(0, 0, 0, 0.8)',
+            opacity: step >= 2 ? 1 : 0,
+            filter: step >= 2 ? 'blur(0)' : 'blur(14px)',
+            transition: `opacity ${GRAY}ms ease-in, filter ${GRAY}ms ease-out`,
+          }}
+        >
+          PRISON BREAK
+        </span>
       </div>
-      <div style={{ width: 34, height: 34, borderRadius: '50%', background: color, border: '2px solid #fff', marginTop: -4 }} />
-      <span>{label}</span>
     </div>
   );
+}
+</file>
+
+<file path="frontend/app/utils/dealer/page.ts">
+export type Zone = 'inventory' | 'dealer' | 'resource';
+export type Trade = Record<Zone, string[]>;
+
+export type ItemId = 'razor' | 'wood' | 'tobacco' | 'shiv';
+export type ItemDef = { id: ItemId; name: string; img: string };
+export type Cost = { id: ItemId; qty: number };
+export type Deal = { label: string; result: ItemId; cost: Cost[]; limit?: number };
+export type DealerDef = { id: number; name: string; stock: ItemId[]; deals: Deal[] };
+
+/*------------------------------------------------------------------
+  ITEMS - img = the SAME string you push into the user items list (`items`).
+  Empty for now: until you fill it, an item is stored as 'item:<id>'.
+------------------------------------------------------------------*/
+export const ITEMS: Record<ItemId, ItemDef> = {
+  razor: { id: 'razor', name: 'Razor Blades', img: '' },
+  wood: { id: 'wood', name: 'Smooth Wood', img: '' },
+  tobacco: { id: 'tobacco', name: 'Tobacco Pack', img: '' },
+  shiv: { id: 'shiv', name: 'Homemade Shiv', img: '' },
+};
+
+/*------------------------------------------------------------------
+  DEALERS - stock = what the dealer holds at the start, deals = what he sells
+------------------------------------------------------------------*/
+export const DEALERS: DealerDef[] = [
+  {
+    id: 1,
+    name: 'Dealer',
+        stock: ['shiv'],
+    deals: [
+      {
+        label: 'A',
+        result: 'shiv',
+         limit: 1,
+        cost: [
+          { id: 'razor', qty: 1 },
+          { id: 'wood', qty: 3 },
+          { id: 'tobacco', qty: 2 },
+        ],
+      },
+    ],
+  },
+];
+
+export const getDealer = (id: number): DealerDef => DEALERS.find((d) => d.id === id) ?? DEALERS[0];
+
+/* the string that represents an item inside the inventory / dealer / resource lists */
+export const itemKey = (id: ItemId): string => ITEMS[id].img || `item:${id}`;
+
+export const initialStock = (dealer: DealerDef): string[] => dealer.stock.map(itemKey);
+
+export const countOf = (list: string[], key: string): number =>
+  list.reduce((n, k) => (k === key ? n + 1 : n), 0);
+
+export const groupItems = (list: string[]): [string, number][] => {
+  const m = new Map<string, number>();
+  list.forEach((k) => m.set(k, (m.get(k) ?? 0) + 1));
+  return Array.from(m.entries());
+};
+
+/* name + image for any key (catalog item, placeholder, or a plain image path like /assets/tools/rasp.png) */
+export const describeItem = (key: string): { name: string; img: string } => {
+  const def = Object.values(ITEMS).find((d) => itemKey(d.id) === key);
+  if (def) return { name: def.name, img: def.img };
+  const isPath = key.includes('/');
+  const file = key.split('/').pop() ?? key;
+  return { name: file.replace(/\.[^.]+$/, ''), img: isPath ? key : '' };
+};
+
+/*------------------------------------------------------------------
+  moveItem - THE function that moves ONE item between the three places:
+    'inventory' (player items), 'dealer' (dealer shop stock), 'resource' (items put up to pay)
+  Returns a new Trade (nothing is mutated). Returns the same Trade if the item is not in `from`.
+------------------------------------------------------------------*/
+export const moveItem = (trade: Trade, from: Zone, to: Zone, key: string): Trade => {
+  const i = trade[from].indexOf(key);
+  if (from === to || i < 0) return trade;
+  const source = trade[from].slice();
+  source.splice(i, 1);
+  return { ...trade, [from]: source, [to]: [...trade[to], key] };
+};
+
+/* the player already holds as many copies of the result as the deal allows */
+export const isMaxed = (trade: Trade, deal: Deal): boolean =>
+  deal.limit !== undefined && countOf(trade.inventory, itemKey(deal.result)) >= deal.limit;
+
+/* not maxed + enough resource staged + the dealer still has the result in stock */
+export const canBuy = (trade: Trade, deal: Deal): boolean =>
+  !isMaxed(trade, deal) &&
+  countOf(trade.dealer, itemKey(deal.result)) > 0 &&
+  deal.cost.every(({ id, qty }) => countOf(trade.resource, itemKey(id)) >= qty);
+/*------------------------------------------------------------------
+  buy - resource -> dealer (payment), then dealer -> inventory (the result)
+  Returns the new Trade, or null if the deal can not be bought yet.
+------------------------------------------------------------------*/
+export const buy = (trade: Trade, deal: Deal): Trade | null => {
+  if (!canBuy(trade, deal)) return null;
+  let next = trade;
+  deal.cost.forEach(({ id, qty }) => {
+    for (let i = 0; i < qty; i++) next = moveItem(next, 'resource', 'dealer', itemKey(id));
+  });
+  return moveItem(next, 'dealer', 'inventory', itemKey(deal.result));
+};
+</file>
+
+<file path="frontend/public/data/dialogues.json">
+{
+  "intro": [
+    "Howdy, I'm Gustave. I ended up behind these bars because I rode with a pack of trash fellas as bad as myself—bastards, thieves, killers.",
+    "I'm used to the smell of rust, and this shit is my home now.",
+    "But I got some news, and something broke inside me. My mother is about to die, and I want to see her one last time to say sorry.",
+    "I must find a way to leave this shit."
+  ],
+  "talk": [
+    "Cellmate: You're awful quiet today, Gustave... What's the matter, big guy? Thinking about offing yourself and save the hangman some trouble?",
+    "Gustave: STFU... I'm just— I ain't...",
+    "Gustave: It's my mother. She's about to die, and I wanna see her one last time to say sorry. So I'm breaking out of here.",
+    "Cellmate: Mm... I see. I know a guy who knows a guy called Dealer. He could help you find some tools, based on your approach. What do you think? (Engineer / Dealer / Miner)",
+    "Gustave: Dealer. That sounds like the right guy.",
+    "Cellmate: Yeah, big guy, that's a great idea. I'll introduce you to him tomorrow. Maybe you'll find something to use on those bars."
+  ],
+  "morning": [
+    "Cellmate: Howdy, Dealer. I want to introduce you to my good friend, Gustave.",
+    "Dealer: Hey, Gustave. Nice to meet you.",
+    "Gustave: Nice to meet you.",
+    "Cellmate: He might need some tools in the next few days, and you can trust him—he's like a brother to me.",
+    "Dealer: Of course, we can sort something out... but everything has a price. Check my list."
+  ]
 }
 </file>
 
@@ -262,36 +705,48 @@ export default function Aim() {
 }
 </file>
 
+<file path="frontend/app/Components/chatnpc/page.tsx">
+export default function NpcChat({ sentence }: { sentence: string }) {
+    return (
+        <div style={{ position: "absolute", width: "98%", height: "30%", zIndex: 111, bottom: 0, left: "50%", transform: "translateX(-50%)", background: "rgb(0, 0, 0, 0.2)", color: "orange", fontFamily: "Courier New, monospace", fontSize: 24, padding: 20 }}>
+            {sentence}
+        </div>
+    );
+}
+</file>
+
+<file path="frontend/app/Components/thermometer/page.tsx">
+export default function Thermometer({ fillref, color, label, left }:any) {
+  return (
+    <div style={{ position: 'absolute', top: 20, left, zIndex: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'none', color: 'orange', fontFamily: 'Courier New, monospace', fontSize: 12 }}>
+      <div style={{ width: 18, height: 160, background: 'rgba(0,0,0,0.4)', border: '2px solid #fff', borderRadius: '9px 9px 0 0', overflow: 'hidden', display: 'flex', alignItems: 'flex-end' }}>
+        <div ref={fillref} style={{ width: '100%', height: '0%', background: color, transition: 'height 0.15s linear' }} />
+      </div>
+      <div style={{ width: 34, height: 34, borderRadius: '50%', background: color, border: '2px solid #fff', marginTop: -4 }} />
+      <span>{label}</span>
+    </div>
+  );
+}
+</file>
+
 <file path="frontend/app/hooks/timer/page.tsx">
 "use client";
-import { useEffect, Dispatch, SetStateAction } from "react";
 
-export default function Timer({
-  interialtimer,
-  setinterialtimer,
-  running = true,
-  onEnd,
-}: {
-  interialtimer: number;
-  setinterialtimer: Dispatch<SetStateAction<number>>;
-  running?: boolean;
-  onEnd?: () => void;
-}) {
-  useEffect(() => {
-    if (!running) return;
-    const id = setInterval(() => setinterialtimer((t) => Math.max(t - 1, 0)), 1000);
-    return () => clearInterval(id);
-  }, [running]);
-
-  useEffect(() => {
-    if (interialtimer === 0) onEnd?.();
-  }, [interialtimer]);
-
-  const hh = String(Math.floor(interialtimer / 3600)).padStart(2, "0");
-  const mm = String(Math.floor((interialtimer % 3600) / 60)).padStart(2, "0");
+export default function Timer({ interialtimer, phase }: { interialtimer: number; phase: "day" | "night" }) {
+  const mm = String(Math.floor(interialtimer / 60)).padStart(2, "0");
   const ss = String(interialtimer % 60).padStart(2, "0");
 
-  return <div id="timer-container"><h1>{hh}:{mm}:{ss}</h1></div>;
+  return (
+    <div id="timer-container" style={{ width: "auto", textAlign: "right" }}>
+      <h1>{phase === "day" ? "DAY" : "NIGHT"} {mm}:{ss}</h1>
+      {phase === "night" && (
+        <>
+          <div style={{ fontSize: 14 }}>Z : sleep</div>
+          <div style={{ fontSize: 14 }}>E : talk</div>
+        </>
+      )}
+    </div>
+  );
 }
 </file>
 
@@ -546,6 +1001,56 @@ export default config;
 }
 </file>
 
+<file path="frontend/app/Menu/page.tsx">
+import { useState } from "react";
+export default function Menu({ pausevalue, onContinue, onSave, onLoad }: {
+  pausevalue: boolean;
+  onContinue?: () => void;
+  onSave?: () => boolean | undefined;
+  onLoad?: () => boolean | undefined;
+}) {
+  const menulist = ["continue", "options", "save", "load", "leave"];
+  const [msg, setMsg] = useState('');
+  const flash = (t: string) => { setMsg(t); setTimeout(() => setMsg(''), 1200); };
+
+  return (
+    <>
+    <div id="menu-container" style={{ display: pausevalue ? 'flex' : 'none' }}>
+      {menulist.map((text, i) => (
+        <button
+          key={i}
+          id={`menubtn-${i}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (text === 'continue') onContinue?.();
+            if (text === 'save') flash(onSave?.() ? 'saved ✓' : 'save failed');
+            if (text === 'load') flash(onLoad?.() ? 'loaded ✓' : 'no save found');
+            if (text === 'leave') window.location.href = '/';
+          }}
+        >
+          {text}
+        </button>
+      ))}
+      <div style={{ color: 'orange', height: 24 }}>{msg}</div>
+    </div>
+    </>
+  );
+}
+</file>
+
+<file path="frontend/next.config.ts">
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  output: "export",
+  trailingSlash: true,
+  images: { unoptimized: true },
+  reactStrictMode: false,
+};
+
+export default nextConfig;
+</file>
+
 <file path="frontend/app/hooks/useVRGameLoop/page.ts">
 //@ts-nocheck
 'use client'
@@ -561,10 +1066,13 @@ import {
   setAnimation,
   POLICE_RANGES,
   spawnNpc,
-  NearMeshes
+  spawnDoor,
+  npcPatrol,
+  NearMeshes, 
+  spawnSleep
 } from "@/app/utils/vrPhysics/page";
 import { computeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
-export function useVRGameLoop(refs, itemsref, setItems, pauseRef, timerRef, setPause, setinterialtimer , setChatStep) {
+export function useVRGameLoop(refs, itemsref, setItems, pauseRef, timerRef, setPause, setinterialtimer , setChatStep, setPhase, setNpcList) {
   /*------------Thermometer-----------*/
     const progress_firstbar = useRef(0);
     const progress_secondbar = useRef(0);
@@ -577,10 +1085,10 @@ export function useVRGameLoop(refs, itemsref, setItems, pauseRef, timerRef, setP
     const {
       walkref, camref, inventoryref,
       landref, saveRef, chooseref ,solidbarref , solidbarref1 , solidbarref2 , rasptool , brokensolidref ,brokensolidref1,
-      progressfillref , alertfillref , roperef , coverref , chairref1 , chairref2 , chairref3 , NPC1pressE , npcpoliceref
-    } = refs;
+      progressfillref , alertfillref , roperef , coverref , chairref1 , chairref2 , chairref3 , NPC1pressE , npcpoliceref ,npcsetref  , celldoorref, 
+    sleepref , buildingdoorref } = refs;
 
-
+    
     const footstepSounds = [
       new Audio('/assets/playeraudio/pl_step1.wav'),
       new Audio('/assets/playeraudio/pl_step2.wav'),
@@ -613,18 +1121,141 @@ export function useVRGameLoop(refs, itemsref, setItems, pauseRef, timerRef, setP
     let animationRetry = 0;
 
     const npcs = [];
+        let listOpen = false;
+    const openList = () => {
+      listOpen = true;
+      setNpcList(true);
+      if (document.pointerLockElement) document.exitPointerLock();
+    };
+    const closeList = () => {
+      listOpen = false;
+      setNpcList(false);
+      const canvas = document.querySelector('a-scene canvas');
+      if (canvas && document.pointerLockElement !== canvas) {
+        const r = canvas.requestPointerLock();
+        if (r && r.catch) r.catch(() => {});
+      }
+    };
     const policeNpcs = [];
     let npcsSpawned = false;
     const NPC_SPAWNS = [
-      { x: 4.6, y: 2.6, z: 0, yaw: 180, clip: 'idle' },
-    ];
+      { x: 4.6, y: 2.6, z: 0, yaw: 180, clip: 'idle', dealer: false },
+      { x: -25.31 , y : 0 , z : -17.69 ,yaw : 270 , clip : 'idle', patrol: { walkDistance: 8, walkSpeed: 1.2, idleTime: 3 }, dealer: true },
+       ];
 
     let policeSpawned = false;
     const POLICE_SPAWNS = [
-      { x: 0.85, y: 2.6, z: -5.11, yaw: 50, scale: 0.9, clip: 'idle' },
+      { x: 0.85, y: 2.8, z: -5.11, yaw: 50, scale: 0.9, clip: 'idle' , patrol: { walkDistance: 12, walkSpeed: 1.2, idleTime: 3 ,  nightYaw: 230  } },
       { x: 5.88, y: 2.6, z: -10.56, yaw: 50, scale: 0.9, clip: 'idle' },
-      { x: 5.07, y: 2.6, z: -9.15, yaw: 50, scale: 0.9, clip: 'idle' },
+      { x: 5.07, y: 0.09, z: -9.15, yaw: 50, scale: 0.9, clip: 'idle' },
+      { x: 2.42, y: 0.09, z: -6.12, yaw: 50, scale: 0.9, clip: 'idle' },
+      { x: -36.87, y: 0, z: -9.28, yaw: 140, scale: 0.9, clip: 'idle' },
+      { x: -37.37, y: 0, z:-31.12, yaw: 50, scale: 0.9, clip: 'idle' },
+      
     ];
+
+
+    const doors = [];
+    let doorsSpawned = false;
+    const DOOR_SPAWNS = [
+  { x: 3.95, y: 2.73, z: -1.05, yaw: -40, scale: 1, cell: true, src: 'cell', clip: 'door_lambert24_0.004Action.001' },
+  { x: 3.19, y: 0.09, z:-8.95, yaw: -35, scale: 0.8, cell: true, src: 'building', clip : 'doorAction' },
+  { x: 1, y: 0.09, z:-31.88, yaw: 75, scale: 0.8, cell: true, src: 'building', clip : 'doorAction' },
+  { x: 16.88, y: 0.09, z:2.75, yaw: -40, scale: 0.8, cell: true, src: 'building', clip : '' },
+  { x: 12.67, y: 0.09, z:-45.4, yaw: 50, scale: 0.8, cell: true, src: 'building', clip : '' },
+  { x: -50.73, y: 0.09, z:3.2, yaw: 50, scale: 0.8, cell: true, src: 'building', clip : '' },
+  { x: -52.4, y: 0.09, z:-42.15, yaw: -40, scale: 0.8, cell: true, src: 'building', clip : '' },
+  { x: -39.6, y: 0.09, z:-29.8, yaw: -200, scale: 0.8, cell: true, src: 'building', clip : 'doorAction'},
+  { x: -38.25, y: 0.09, z:-9.7, yaw: -120, scale: 0.8, cell: true, src: 'building', clip : 'doorAction'},
+];
+
+
+   const sleepernpcs = [];
+   let sleepSpawned = false;
+    const SLEEP_SPAWNS = [
+      { x: 10.58, y: 3.22, z: -10.58, yaw: -35, scale: 1, clip: 'sleep' },
+      { x: 12.48, y: 3.22, z: -8.88, yaw: -35, scale: 1, clip: 'sleep' },
+      { x: 14.5, y: 3.22, z: -7.31, yaw: -35, scale: 1, clip: 'sleep' },
+      { x: 16.2, y: 3.22, z: -5.58, yaw: -35, scale: 1, clip: 'sleep' },
+      { x: 16.2, y: 0.62, z: -5.58, yaw: -35, scale: 1, clip: 'sleep' },
+      { x: 10.58, y: 0.62, z: -10.58, yaw: -35, scale: 1, clip: 'sleep' },
+      { x: 12.48, y: 0.62, z: -8.88, yaw: -35, scale: 1, clip: 'sleep' },
+      { x: 14.5, y: 0.62, z: -7.31, yaw: -35, scale: 1, clip: 'sleep' },
+    ];
+
+    /*--------------------day / night cycle-----------------*/
+const DAY_TIME = 90;
+const NIGHT_TIME = 30;
+const SLEEP_KEY = 'KeyZ';
+const CELL_SPAWN = { x: 3.4, y: 2.6, z: 0 };
+let phase = 'night';
+let phaseT = NIGHT_TIME;
+let shownSec = NIGHT_TIME;
+
+
+const setDoor = (open) => {
+  const el = celldoorref?.current;
+  if (el) el.object3D.visible = !open;
+  doors.forEach((d) => {
+    if (!d.spawn.cell) return;
+    d.el.object3D.visible = true;
+    if (d.mixer) { d.mixer.stopAllAction(); d.mixer.uncacheRoot(d.mesh); d.mixer = null; }
+    if (!open || !d.clip) return;
+    d.mixer = new THREE.AnimationMixer(d.mesh);
+    const action = d.mixer.clipAction(d.clip);
+    action.setLoop(THREE.LoopOnce, 1);
+    action.clampWhenFinished = true;
+    action.play();
+  });
+};
+
+const setSleepers = (show) => sleepernpcs.forEach((n) => { n.el.object3D.visible = show; });
+
+const resetNpc = (n) => {
+  const s = n.spawn;
+  if (!s) return;
+  n.el.setAttribute('position', { x: s.x, y: s.y, z: s.z });
+  n.el.setAttribute('rotation', { x: 0, y: s.yaw ?? 0, z: 0 });
+  n.physics.vy = 0;
+  n.patrolState = null;
+  n.play(s.clip ?? 'idle', 0);
+};
+
+const respawnPlayer = () => {
+  const p = walkref.current.object3D;
+  p.position.set(CELL_SPAWN.x, CELL_SPAWN.y, CELL_SPAWN.z);
+  yaw = 0;
+  pitch = 0;
+  p.rotation.y = 0;
+  camref.current.object3D.rotation.x = 0;
+  playerPhysics.vy = 0;
+  nx0 = Infinity;
+};
+
+const startNight = () => {
+  phase = 'night';
+  phaseT = NIGHT_TIME;
+  shownSec = NIGHT_TIME;
+  setPhase('night');
+  setinterialtimer(NIGHT_TIME);
+  setChatStep(-1);
+  closeList();
+  respawnPlayer();
+  setDoor(false);
+  setSleepers(true);
+};
+
+const startDay = () => {
+  phase = 'day';
+  phaseT = DAY_TIME;
+  shownSec = DAY_TIME;
+  setPhase('day');
+  setinterialtimer(DAY_TIME);
+  npcs.forEach(resetNpc);
+  policeNpcs.forEach(resetNpc);
+  setDoor(true);
+  setSleepers(false);
+};
 
     /*--------------------body auto-fit (feet on ground, centered under camera)-----------------*/
     const BODY_BACK = 0.3;
@@ -726,6 +1357,36 @@ export function useVRGameLoop(refs, itemsref, setItems, pauseRef, timerRef, setP
   nx0 = Infinity;
 };
 
+let doorPrepared = false;
+
+const prepareDoor = () => {
+  const el = celldoorref?.current;
+  const mesh = el?.getObject3D('mesh');
+  if (!mesh) return;
+  doorPrepared = true;
+  el.object3D.updateMatrixWorld(true);
+  mesh.traverse((o) => {
+    if (!o.isMesh) return;
+    [].concat(o.material).forEach((m) => (m.side = THREE.DoubleSide));
+    if (!o.geometry.boundsTree) computeBoundsTree.call(o.geometry);
+    o.raycast = acceleratedRaycast;
+    landMeshes.push({ mesh: o, box: new THREE.Box3().setFromObject(o) });
+  });
+  nx0 = Infinity;
+};
+
+const prepareSpawnedDoor = (d) => {
+  d.el.object3D.updateMatrixWorld(true);
+  d.mesh.traverse((o) => {
+    if (!o.isMesh) return;
+    [].concat(o.material).forEach((m) => (m.side = THREE.DoubleSide));
+    if (!o.geometry.boundsTree) computeBoundsTree.call(o.geometry);
+    o.raycast = acceleratedRaycast;
+    landMeshes.push({ mesh: o, box: new THREE.Box3().setFromObject(o) });
+  });
+  nx0 = Infinity;
+};
+
     const JUMP = 24; // see GRAVITY
     let JumpEffects = false;
 
@@ -785,12 +1446,28 @@ export function useVRGameLoop(refs, itemsref, setItems, pauseRef, timerRef, setP
     const down = (e) => {
       keys[e.code] = true;
 
+        if (listOpen) {
+        if (!e.repeat && (e.code === 'KeyE' || e.code === 'Escape')) closeList();
+        return;
+      }
+
       if (cine && e.code !== 'Escape') return;
       
 
       if (NPC1pressE.current && e.code !== 'Escape') return;
 
-      if (e.code === 'KeyE' && npcs.some((n) => IsHovered({ current: n.el }, NPC_HOVERDIST))) {
+      if (e.code === SLEEP_KEY && phase === 'night') {
+  startDay();
+  return;
+}
+
+
+     if (e.code === 'KeyE' && (npcs.some((n) => n.isDealer && IsHovered({ current: n.el }, NPC_HOVERDIST)) || IsHovered(npcsetref, NPC_HOVERDIST))) {
+        openList();
+        return;
+      }
+
+      if (e.code === 'KeyE' && phase === 'night' && !IsHovered(solidbarref, HOVERDIST) && !IsHovered(solidbarref1, HOVERDIST) && !IsHovered(solidbarref2, HOVERDIST)) {
         setChatStep(0);
         return;
       }
@@ -863,6 +1540,8 @@ export function useVRGameLoop(refs, itemsref, setItems, pauseRef, timerRef, setP
     };
 
     const onClick = () => {
+      if (listOpen) return;
+
       const canvas = document.querySelector('a-scene canvas');
 
       if (canvas && document.pointerLockElement !== canvas) {
@@ -889,7 +1568,8 @@ export function useVRGameLoop(refs, itemsref, setItems, pauseRef, timerRef, setP
         const p = walkref.current.object3D;
         localStorage.setItem(SAVE_KEY, JSON.stringify({
           player: { x: p.position.x, y: p.position.y, z: p.position.z, yaw, pitch },
-          timer: timerRef.current,
+          timer: Math.ceil(phaseT),
+          phase: phase,
           items: itemsref.current,
         }));
         return true;
@@ -909,12 +1589,19 @@ export function useVRGameLoop(refs, itemsref, setItems, pauseRef, timerRef, setP
         camref.current.object3D.rotation.x = pitch;
         playerPhysics.vy = 0;
         setItems(s.items ?? []);
-        if (typeof s.timer === "number") setinterialtimer(s.timer);
+        phase = s.phase === 'night' ? 'night' : 'day';
+        const maxT = phase === 'day' ? DAY_TIME : NIGHT_TIME;
+        phaseT = typeof s.timer === 'number' ? Math.min(s.timer, maxT) : maxT;
+        shownSec = Math.ceil(phaseT);
+        setPhase(phase);
+        setinterialtimer(shownSec);
+        setDoor(phase === 'day');
+        setSleepers(phase === 'night');
         return true;
       } catch { return false; }
     };
 
-    saveRef.current = { save, load };
+    saveRef.current = { save, load, closeList };
     let pendingLoad = new URLSearchParams(window.location.search).get('continue') === '1';
 
     
@@ -1082,6 +1769,17 @@ const npcGround = (npc, dt) => {
         return;
       }
 
+      if (!NPC1pressE.current) phaseT -= dt;
+        const sec = Math.max(Math.ceil(phaseT), 0);
+        if (sec !== shownSec) {
+          shownSec = sec;
+          setinterialtimer(sec);
+        }
+        if (phaseT <= 0) {
+          if (phase === 'day') startNight();
+          else startDay();
+        }
+
       if (!keys.KeyE && alertLevel > 0) addAlert(-ALERT_DECAY * dt);
 
       hoverTimer += dt;
@@ -1111,8 +1809,8 @@ const npcGround = (npc, dt) => {
           policeSpawned = true;
             POLICE_SPAWNS.forEach((s) => {
             const npc = spawnNpc(THREE, npcpoliceref, scn, s, POLICE_RANGES);
-            if (npc) policeNpcs.push(npc);
-            console.log('[police] spawned', !!npc);
+            if (npc) { npc.nightOnly = true; npcs.push(npc); }
+            
             if (npc) setTimeout(() => {
               npc.el.object3D.updateMatrixWorld(true);
               const b = new THREE.Box3().setFromObject(npc.mesh);
@@ -1128,10 +1826,22 @@ const npcGround = (npc, dt) => {
           npcsSpawned = true;
           NPC_SPAWNS.forEach((s) => {
             const npc = spawnNpc(THREE, chooseref, scn, s);
-            if (npc) npcs.push(npc);
+            if (npc) { npc.patrolCfg = s.patrol; npc.spawn = s; npc.isDealer = !!s.dealer; npcs.push(npc); }  
           });
         }
       }
+
+      if (!sleepSpawned) {
+      const scn = document.querySelector('a-scene');
+      if (scn && sleepref?.current?.getObject3D('mesh')) {
+        sleepSpawned = true;
+        SLEEP_SPAWNS.forEach((s) => {
+          const n = spawnSleep(THREE, sleepref, scn, s);
+          if (n) sleepernpcs.push(n);
+          });
+          setSleepers(phase === 'night');
+      }
+}
 
       if (!bodyFitted && (clipsReady || animationRetry >= 300)) {
         bodyFitTimer += dt;
@@ -1155,6 +1865,26 @@ const npcGround = (npc, dt) => {
       }
       if (!chairsPrepared) prepareChairs();
 
+      if (!doorPrepared) prepareDoor();
+
+if (!doorsSpawned) {
+  const scn = document.querySelector('a-scene');
+  if (scn && celldoorref?.current?.getObject3D('mesh') && buildingdoorref?.current?.getObject3D('mesh')) {
+    doorsSpawned = true;
+    DOOR_SPAWNS.forEach((s) => {
+      const srcRef = s.src === 'building' ? buildingdoorref : celldoorref;
+      const d = spawnDoor(THREE, srcRef, scn, s);
+      if (d) {
+        const anims = srcRef.current.getObject3D('mesh').animations;
+        d.clip = s.clip ? (anims.find((c) => c.name === s.clip) || anims[0]) : null;
+        prepareSpawnedDoor(d);
+        doors.push(d);
+      }
+    });
+    setDoor(phase === 'day');
+  }
+}
+
       if (land) {
         const p = walkref.current.object3D.position;
         refreshNearby(p);
@@ -1167,7 +1897,7 @@ const npcGround = (npc, dt) => {
           HeadRay.intersectObjects(nearby, false, probeHits);
           if (probeHits.length) playerPhysics.vy = 0;
         }
-
+        GroundRay.far = STEP + MAX_STEP + 0.1 + Math.max(0, -(playerPhysics.vy - GRAVITY * dt) * dt);
         let hit = null;
         for (let i = 0; i < GROUND_PROBES.length; i++) {
           probeOrigin.set(p.x + GROUND_PROBES[i][0], p.y + STEP, p.z + GROUND_PROBES[i][1]);
@@ -1191,8 +1921,13 @@ const npcGround = (npc, dt) => {
       }
 
       if (land) {
-        for (let i = 0; i < npcs.length; i++) npcGround(npcs[i], dt);
+                for (let i = 0; i < npcs.length; i++) {
+          if (npcs[i].patrolCfg && (phase === 'night' || !npcs[i].nightOnly)) npcPatrol(npcs[i], dt, npcs[i].patrolCfg);
+          else npcGround(npcs[i], dt);
+        }
         for (let i = 0; i < policeNpcs.length; i++) npcGround(policeNpcs[i], dt);
+        if (phase === 'night') for (let i = 0; i < sleepernpcs.length; i++) sleepernpcs[i].mixer.update(dt);
+       for (let i = 0; i < doors.length; i++) doors[i].mixer?.update(dt);
       }
 
       const X = NPC1pressE.current ? 0 : (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
@@ -1246,60 +1981,27 @@ const npcGround = (npc, dt) => {
         playerPhysics.nx = p.x;
         playerPhysics.nz = p.z;
       }
-      console.log(walkref.current.object3D.position.x)
-      console.log(walkref.current.object3D.position.y)
-      console.log(walkref.current.object3D.position.z)
-    };
 
+      console.log(walkref.current.object3D.position.x);
+      console.log(walkref.current.object3D.position.y);
+      console.log(walkref.current.object3D.position.z);
+
+    };
+    
     raf = requestAnimationFrame(loop);
 
     return () => {
       cancelAnimationFrame(raf);
       npcs.forEach((n) => n.dispose());
       policeNpcs.forEach((n) => n.dispose());
+      sleepernpcs.forEach((n) => n.dispose());
+      doors.forEach((d) => d.dispose());
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);
       window.removeEventListener('mousemove', onMouseMovenormal);
       window.removeEventListener('click', onClick);
     };
   }, []);
-}
-</file>
-
-<file path="frontend/app/Menu/page.tsx">
-import { useState } from "react";
-export default function Menu({ pausevalue, onContinue, onSave, onLoad }: {
-  pausevalue: boolean;
-  onContinue?: () => void;
-  onSave?: () => boolean | undefined;
-  onLoad?: () => boolean | undefined;
-}) {
-  const menulist = ["continue", "options", "save", "load", "leave"];
-  const [msg, setMsg] = useState('');
-  const flash = (t: string) => { setMsg(t); setTimeout(() => setMsg(''), 1200); };
-
-  return (
-    <>
-    <div id="menu-container" style={{ display: pausevalue ? 'flex' : 'none' }}>
-      {menulist.map((text, i) => (
-        <button
-          key={i}
-          id={`menubtn-${i}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (text === 'continue') onContinue?.();
-            if (text === 'save') flash(onSave?.() ? 'saved ✓' : 'save failed');
-            if (text === 'load') flash(onLoad?.() ? 'loaded ✓' : 'no save found');
-            if (text === 'leave') window.location.href = '/';
-          }}
-        >
-          {text}
-        </button>
-      ))}
-      <div style={{ color: 'orange', height: 24 }}>{msg}</div>
-    </div>
-    </>
-  );
 }
 </file>
 
@@ -1347,10 +2049,20 @@ const neutralizeRootMotion = (THREE, model, clips) => {
   const locked = [];
 
   clips.forEach((clip) => {
+    clip.tracks.forEach((t) => {
+      const [, p] = splitTrackName(t.name);
+      if (p !== 'scale') return;
+      const lo = Math.min(...t.values);
+      const hi = Math.max(...t.values);
+      if (lo < 0.99 || hi > 1.01) console.log('[scale]', clip.name, t.name, lo.toFixed(3), hi.toFixed(3));
+      console.log('[tracks]', clip.name, clip.tracks.length);
+    });
+
     clip.tracks = clip.tracks.filter((t) => {
       const [node, prop] = splitTrackName(t.name);
       const rigid =
-        rigidNames.has(node) && (prop === 'position' || prop === 'quaternion' || prop === 'rotation');
+        rigidNames.has(node) &&
+        (prop === 'position' || prop === 'quaternion' || prop === 'rotation' || prop === 'scale');
       if (rigid) removed.push(clip.name + ':' + t.name);
       return !rigid;
     });
@@ -1366,6 +2078,15 @@ const neutralizeRootMotion = (THREE, model, clips) => {
         for (let i = 0; i < v.length; i += 3) {
           v[i] = f[0];
           v[i + 2] = f[1];
+        }
+        locked.push(clip.name + ':' + t.name);
+      } else if (prop === 'scale') {
+        if (!first[t.name]) first[t.name] = [v[0], v[1], v[2]];
+        const f = first[t.name];
+        for (let i = 0; i < v.length; i += 3) {
+          v[i] = f[0];
+          v[i + 1] = f[1];
+          v[i + 2] = f[2];
         }
         locked.push(clip.name + ':' + t.name);
       } else if (LOCK_ROOT_ROTATION && prop === 'quaternion') {
@@ -1386,8 +2107,9 @@ const neutralizeRootMotion = (THREE, model, clips) => {
 
   console.info('[rootmotion]', { roots: [...rootNames], rigid: [...rigidNames], removed, locked });
 };
-export const PRISONER_RANGES = { idle: [1, 108], walk: [110, 180], run: [182, 242] };
-export const POLICE_RANGES = { idle: [1, 115], walk: [121, 144], run: [146, 168] };
+
+export const PRISONER_RANGES = { idle: [1, 108], walk: [110, 180], run: [182, 242] , turn180 : [244 , 263]};
+export const POLICE_RANGES = { idle: [1, 115], walk: [150, 183], run: [183, 218], turn180: [218, 237] };
 
 export const setupSubclips = (ref, ranges = PRISONER_RANGES) => {
   const THREE = window.AFRAME.THREE;
@@ -1565,21 +2287,24 @@ export function NpcMovement(npcmovestates, object3D, Aside, Bside, startnpc, end
 }
 
 export function GravityAndWithJump(landObjecthit, Objectref, physics, dt, GRAVITY, MAX_STEP) {
- 
+  const pos = Objectref.object3D.position;
+  const nextVy = physics.vy - GRAVITY * dt;
+  const nextY = pos.y + nextVy * dt;
+
   if (
     landObjecthit &&
     physics.vy <= 0 &&
-    Objectref.object3D.position.y - landObjecthit.point.y <= MAX_STEP
+    nextY - landObjecthit.point.y <= MAX_STEP
   ) {
-    Objectref.object3D.position.y = landObjecthit.point.y;
+    pos.y = landObjecthit.point.y;
     physics.vy = 0;
     physics.onGround = true;
   } else {
-    physics.vy -= GRAVITY * dt;
-    Objectref.object3D.position.y += physics.vy * dt;
+    physics.vy = nextVy;
+    pos.y = nextY;
     physics.onGround = false;
   }
-}
+};
 
 export function isPlayerInNpcFOV(THREE, npcObject, playerPos, fovDegrees = 90, maxDistance = 30) {
   const npcPos = npcObject.position;
@@ -1815,7 +2540,7 @@ export function NearMeshes(entries, x, z, r = 4) {
   sourceRef : ref of the entity that already ran setupSubclips (chooseref)
   returns   : { el, mesh, mixer, play, dispose }  (this object IS the NPC "ref")
 ------------------------------------------------------------------*/
-export const spawnNpc = (THREE, sourceRef, sceneEl, { x, y, z, yaw = 0, scale = 0.9, clip = 'idle' }, ranges) => {
+export const spawnNpc = (THREE, sourceRef, sceneEl, { x, y, z, yaw = 0, scale = 0.9, clip = 'idle', patrol = null }, ranges) => {
   const src = sourceRef?.current?.getObject3D('mesh');
   if (!src || !sceneEl || !setupSubclips(sourceRef, ranges) || !src.animations?.length) return null;
 
@@ -1836,7 +2561,7 @@ export const spawnNpc = (THREE, sourceRef, sceneEl, { x, y, z, yaw = 0, scale = 
     if (current) current.fadeOut(fade);
     current = next;
   };
-  console.log('[spawnNpc]', clip, src.animations.map((c) => c.name));
+
   play(actions[clip] ? clip : src.animations[0].name, 0);
   play(clip, 0);
   current.time = Math.random() * current.getClip().duration;
@@ -1859,11 +2584,13 @@ export const spawnNpc = (THREE, sourceRef, sceneEl, { x, y, z, yaw = 0, scale = 
   sceneEl.appendChild(el);
   el.setObject3D('mesh', mesh);
 
-    return {
+  return {
     el,
     mesh,
     mixer,
     play,
+    patrolCfg: patrol,
+    spawn: { x, y, z, yaw, scale, clip },
     physics: { vy: 0, onGround: false },
     dispose: () => {
       mixer.stopAllAction();
@@ -1872,18 +2599,119 @@ export const spawnNpc = (THREE, sourceRef, sceneEl, { x, y, z, yaw = 0, scale = 
     },
   };
 };
-</file>
 
-<file path="frontend/next.config.ts">
-import type { NextConfig } from "next";
+/* idle -> turn180 -> walk(walkDistance) -> idle -> turn180 -> walk ... بدون نهاية
+   بتنادى كل frame. cfg: { walkDistance (متر), walkSpeed (متر/ثانية), idleTime (ثواني) } */
+const TURN_DIR = 1; // خليها -1 إذا شكل الدوران معكوس
+export const npcPatrol = (npc, dt, { walkDistance = 8, walkSpeed = 1.2, idleTime = 3, nightYaw } = {}) => {
+  if (!npc.patrolState && nightYaw !== undefined) npc.el.object3D.rotation.y = (nightYaw * Math.PI) / 180;
+  const s = (npc.patrolState = npc.patrolState || { phase: 'idle', t: 0, walked: 0, yaw0: 0, turnDur: 0 });
+  const o = npc.el.object3D;
+  s.t += dt;
 
-const nextConfig: NextConfig = {
-  output: "export",
-  trailingSlash: true,
-  images: { unoptimized: true }, 
+  if (s.phase === 'idle') {
+    if (s.t < idleTime) return;
+    s.phase = 'turn';
+    s.t = 0;
+    s.yaw0 = o.rotation.y;
+    s.turnDur = npc.mesh.animations.find((c) => c.name === 'turn180').duration;
+    
+  } else if (s.phase === 'turn') {
+    o.rotation.y = s.yaw0 + TURN_DIR * Math.PI * Math.min(s.t / s.turnDur, 1);
+    if (s.t < s.turnDur) return;
+    s.phase = 'walk';
+    s.t = 0;
+    s.walked = 0;
+    npc.play('walk');
+  } else {
+    const step = Math.min(walkSpeed * dt, walkDistance - s.walked);
+    o.position.x += Math.sin(o.rotation.y) * step;
+    o.position.z += Math.cos(o.rotation.y) * step;
+    s.walked += step;
+    if (s.walked < walkDistance) return;
+    s.phase = 'idle';
+    s.t = 0;
+    npc.play('idle');
+  }
 };
 
-export default nextConfig;
+/*------------------------------------------------------------------
+  spawnDoor - brand-new static door cloned from an already loaded model
+  (same idea as spawnNpc, nothing animated: geometry + materials are shared).
+  sourceRef : ref of the entity that holds the door glb (celldoorref)
+  spawn     : { x, y, z, yaw, scale, ... }  x / z = centre, y = bottom of the door
+  returns   : { el, mesh, spawn, dispose }
+  Open a door = hide it (el.object3D.visible = false), same as the cell door.
+------------------------------------------------------------------*/
+export const spawnDoor = (THREE, sourceRef, sceneEl, spawn) => {
+  const { x, y, z, yaw = 0, scale = 1 } = spawn;
+  const src = sourceRef?.current?.getObject3D('mesh');
+  if (!src || !sceneEl) return null;
+
+  const mesh = src.clone(true);
+  mesh.visible = true;
+  mesh.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(mesh);
+  const c = box.getCenter(new THREE.Vector3());
+  mesh.position.x -= c.x;
+  mesh.position.y -= box.min.y;
+  mesh.position.z -= c.z;
+
+  const el = document.createElement('a-entity');
+  el.setAttribute('position', { x, y, z });
+  el.setAttribute('rotation', { x: 0, y: yaw, z: 0 });
+  el.setAttribute('scale', { x: scale, y: scale, z: scale });
+  sceneEl.appendChild(el);
+  el.setObject3D('mesh', mesh);
+
+  /* A-Frame applies the attributes a moment later, the collision boxes need the
+     final transform right now, so it is also written straight on the object3D */
+  el.object3D.position.set(x, y, z);
+  el.object3D.rotation.set(0, THREE.MathUtils.degToRad(yaw), 0);
+  el.object3D.scale.setScalar(scale);
+  el.object3D.updateMatrixWorld(true);
+
+  return {
+    el,
+    mesh,
+    spawn,
+    dispose: () => el.remove(),
+  };
+};
+
+export const sleepnpcs = [];
+
+export const spawnSleep = (THREE, sourceRef, sceneEl, { x, y, z, yaw = 0, scale = 1, clip = 'sleep' }) => {
+  const src = sourceRef?.current?.getObject3D('mesh');
+  if (!src || !sceneEl || !src.animations?.length) return null;
+
+  const mesh = cloneSkinned(src);
+  mesh.animations = src.animations;
+
+  const mixer = new THREE.AnimationMixer(mesh);
+  const action = mixer.clipAction(src.animations.find((c) => c.name === clip) || src.animations[0]);
+  action.play();
+  action.time = Math.random() * action.getClip().duration;
+  mixer.update(0);
+
+  const el = document.createElement('a-entity');
+  el.setAttribute('position', { x, y, z });
+  el.setAttribute('rotation', { x: 0, y: yaw, z: 0 });
+  el.setAttribute('scale', { x: scale, y: scale, z: scale });
+  sceneEl.appendChild(el);
+  el.setObject3D('mesh', mesh);
+
+  return {
+    el,
+    mesh,
+    mixer,
+    dispose: () => {
+      mixer.stopAllAction();
+      mixer.uncacheRoot(mesh);
+      el.remove();
+    },
+  };
+};
 </file>
 
 <file path="frontend/CLAUDE.md">
@@ -1950,10 +2778,63 @@ export default nextConfig;
 }
 </file>
 
+<file path="frontend/README.md">
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+
+## Getting Started
+
+First, run the development server:
+
+```bash
+
+#first 
+bun install
+#or
+npm install
+
+   |
+   |
+   V
+
+#frontend 
+npm run tauri dev
+# or
+bun run tauri dev
+
+
+
+
+url for run on web will be shared later or never be share based on offline game standards
+
+```
+
+
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+
+You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+
+## Learn More
+
+To learn more about Next.js, take a look at the following resources:
+
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+
+## Deploy on Vercel
+
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+</file>
+
 <file path="frontend/app/Components/page.tsx">
 //@ts-nocheck
 import React,{useRef} from 'react';
-export default function MainComponents({ walkref , chooseref , npcref , camref , landref , solidbarref , solidbarref1 , solidbarref2 , rasptool , brokensolidref , brokensolidref1 , roperef , coverref ,chairref1 , chairref2 , chairref3 , npcpoliceref}: any) {
+export default function MainComponents({ walkref , chooseref , npcref , camref , landref , solidbarref , solidbarref1 , solidbarref2 , rasptool , brokensolidref , brokensolidref1 , roperef , coverref ,chairref1 , chairref2 , chairref3 , npcpoliceref , npcsetref, celldoorref , sleepref , buildingdoorref}: any) {
     return (
         <a-scene
         embedded
@@ -1962,7 +2843,7 @@ export default function MainComponents({ walkref , chooseref , npcref , camref ,
         <a-assets>
       <a-asset-item
         id="landModel"
-        src="/assets/finalmap1.2.glb"
+        src="/assets/finalmap1.1.glb"
       ></a-asset-item>
 
       <a-asset-item
@@ -2039,6 +2920,28 @@ export default function MainComponents({ walkref , chooseref , npcref , camref ,
         <a-asset-item
         id = "nestedpoliceModel"
         src = "/assets/police/policenestedaction.glb"
+        ></a-asset-item>
+
+        
+    
+        <a-asset-item
+        id = "settalkModel"
+        src = "/assets/prisoner/settalk.glb"
+        ></a-asset-item>
+
+        <a-asset-item
+          id = "celldoorModel"
+          src = "/assets/Doors/movingcelldoor.glb"
+        ></a-asset-item>
+
+        <a-asset-item
+        id = "sleepModel"
+        src = "/assets/prisoner/sleep.glb"
+        ></a-asset-item>
+
+        <a-asset-item
+          id = "buildingcelldoorModel"
+          src = "/assets/Doors/outsidedoor1.glb"
         ></a-asset-item>
     </a-assets>
 
@@ -2174,183 +3077,36 @@ export default function MainComponents({ walkref , chooseref , npcref , camref ,
       gltf-model = "#nestedpoliceModel"
       visible = "false"
       ></a-entity>
+      
+    <a-entity
+    ref = {npcsetref}
+    gltf-model = "#settalkModel"
+    scale = "1 1 1"
+    position = "-11.3 0 -24.61"
+    rotation = "0 270 0"
+    animation-mixer = "clip: set; loop: repeat"
+    ></a-entity>
 
+    <a-entity
+      ref = {celldoorref}
+      gltf-model = "#celldoorModel"
+      
+    ></a-entity>
+    
+      <a-entity
+  ref = {sleepref}
+  gltf-model = "#sleepModel"
+  visible = "false"
+></a-entity>
+
+<a-entity
+  ref = {buildingdoorref}
+  gltf-model = "#buildingcelldoorModel"
+  visible = "false"
+></a-entity>
       </a-scene>
-      
+     
     );
-}
-</file>
-
-<file path="frontend/README.md">
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
-
-## Getting Started
-
-First, run the development server:
-
-```bash
-
-#first 
-bun install
-#or
-npm install
-
-   |
-   |
-   V
-
-#frontend 
-npm run tauri dev
-# or
-bun run tauri dev
-
-
-
-
-url for run on web will be shared later or never be share based on offline game standards
-
-```
-
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-</file>
-
-<file path="frontend/app/Play/page.tsx">
-//@ts-nocheck
-'use client'
-import { useEffect, useRef, useState } from "react";
-import Menu from '@/app/Menu/page.tsx';
-import Aim from "../Components/aim/page.tsx";
-import MainComponents from "@/app/Components/page.tsx";
-import { useVRGameLoop } from "@/app/hooks/useVRGameLoop/page.ts";
-import Timer from "@/app/hooks/timer/page.tsx";
-import Thermometer from "@/app/Components/thermometer/page.tsx";
-import NpcChat from "../Components/chatnpc/page.tsx";
-
-const SENTENCES = ["Sentence 1", "Sentence 2"];
-export default function VRScence() {
-  const refs = {
-    walkref: useRef(null),
-    camref: useRef(null),
-    inventoryref: useRef(null),
-    keyref: useRef(null),
-    landref: useRef(null),
-    saveRef: useRef(null),
-    chooseref : useRef(null),
-    solidbarref : useRef(null),
-    solidbarref1 : useRef(null),
-    solidbarref2 : useRef(null),
-    rasptool : useRef(null),
-    brokensolidref : useRef(null),
-    brokensolidref1 : useRef(null),
-    progressfillref: useRef(null),
-    alertfillref: useRef(null),
-    roperef : useRef(null),
-    coverref: useRef(null),
-    chairref1 : useRef(null),
-    chairref2 : useRef(null),
-    chairref3 : useRef(null),
-    npcref : useRef(null),
-    NPC1pressE : useRef(false),
-    npcpoliceref : useRef(null)
-  };
-
-  const inventory = [];
-
-  const [pause, setPause] = useState(false);
-  const pauseRef = useRef(false);
-  const [interialtimer , setinterialtimer] = useState(7200);
-  const timerRef = useRef(null);
-  useEffect(() => { pauseRef.current = pause; timerRef.current = interialtimer; }, [pause, interialtimer]);
-
-  const [items, setItems] = useState<string[]>([]);
-  const itemsref = useRef([]);
-  itemsref.current = items;
-
-    const [chatStep, setChatStep] = useState(-1);
-    refs.NPC1pressE.current = chatStep >= 0;
-
-    useEffect(() => {
-      const next = () => {
-        if (pauseRef.current) return;
-        setChatStep((s) => (s < 0 || s + 1 >= SENTENCES.length ? -1 : s + 1));
-      };
-      window.addEventListener('click', next);
-      return () => window.removeEventListener('click', next);
-    }, []);
-
-    useVRGameLoop(refs, itemsref, setItems, pauseRef, timerRef, setPause, setinterialtimer, setChatStep);
-  
-  return (
-    <div style={{ width: '100vw', height: '100vh', position: 'fixed', top: 0, left: 0 }}>
-      <MainComponents
-        walkref={refs.walkref}
-        camref={refs.camref}
-        inventoryref={refs.inventoryref}
-        landref={refs.landref}
-        chooseref = {refs.chooseref}
-        solidbarref = {refs.solidbarref}
-        solidbarref1 = {refs.solidbarref1}
-        solidbarref2 = {refs.solidbarref2}
-        rasptool = {refs.rasptool}
-        brokensolidref = {refs.brokensolidref}
-        brokensolidref1 = {refs.brokensolidref1}
-        roperef = {refs.roperef}
-        coverref={refs.coverref}
-        chairref1 = {refs.chairref1}
-        chairref2 = {refs.chairref2}
-        chairref3 = {refs.chairref3}
-        npcref = {refs.npcref}
-        npcpoliceref = {refs.npcpoliceref}
-        />
-
-      {/*----------------------aim templer-----------------*/}
-      <Aim />
-
-      {/*----------------------NPC Chat-----------------*/}
-      {chatStep >= 0 && <NpcChat sentence={SENTENCES[chatStep]} />}
-
-      {/*---------------------Thermometer for actions----------------*/}
-      <Thermometer fillref={refs.progressfillref} color="#2ecc71" label="Progress" left={20} />
-      <Thermometer fillref={refs.alertfillref} color="#e74c3c" label="Alert" left={90} />
-
-      <Timer running ={!pause} setinterialtimer = {setinterialtimer} interialtimer = {interialtimer}/>
-      
-      {/*---------------------inventory--------------------*/}
-      <div id = "inventory-container" ref = {refs.inventoryref}>
-      {items.map((url , index) => {
-        return <img key = {index} id = {`box-${index}`} src={url} alt="" />;
-      })}
-      </div>
-
-      {/*---------------------pause--------------------*/}
-      <Menu
-        pausevalue={pause}
-        onContinue={() => setPause(false)}
-        onSave={() => refs.saveRef.current?.save()}
-        onLoad={() => refs.saveRef.current?.load()}
-      />
-    </div>
-  );
 }
 </file>
 
@@ -2362,7 +3118,7 @@ export default function VRScence() {
 }
 
 /*--------------------inventory--------------------*/
-#inventory-container{
+#inventory-container , #npc-list-container{
  display: none;
 grid-template-columns: repeat(4, minmax(0, 1fr));
  grid-template-rows: repeat(4, minmax(0, 1fr));
@@ -2456,6 +3212,174 @@ margin-bottom: 100px;
     height: 100px;
     color: orange;
     z-index: 12;
+}
+</file>
+
+<file path="frontend/app/Play/page.tsx">
+//@ts-nocheck
+'use client'
+import { useEffect, useRef, useState } from "react";
+import Menu from '@/app/Menu/page.tsx';
+import Aim from "../Components/aim/page.tsx";
+import MainComponents from "@/app/Components/page.tsx";
+import { useVRGameLoop } from "@/app/hooks/useVRGameLoop/page.ts";
+import Timer from "@/app/hooks/timer/page.tsx";
+import Thermometer from "@/app/Components/thermometer/page.tsx";
+import NpcChat from "../Components/chatnpc/page.tsx";
+import Dealer from "../Components/dealer/page.tsx";
+import { getDealer, initialStock } from "@/app/utils/dealer/page";
+import Intro from "../Components/intro/page.tsx";
+import DIALOGUES from "@/public/data/dialogues.json";
+
+const { intro: INTRO, talk: TALK, morning: MORNING } = DIALOGUES;
+const SENTENCES = [...INTRO, ...TALK, ...MORNING];
+const STOPS = [INTRO.length + TALK.length, SENTENCES.length]; // the chat closes when it reaches these
+export default function VRScence() {
+  const refs = {
+    walkref: useRef(null),
+    camref: useRef(null),
+    inventoryref: useRef(null),
+    keyref: useRef(null),
+    landref: useRef(null),
+    saveRef: useRef(null),
+    chooseref : useRef(null),
+    solidbarref : useRef(null),
+    solidbarref1 : useRef(null),
+    solidbarref2 : useRef(null),
+    rasptool : useRef(null),
+    brokensolidref : useRef(null),
+    brokensolidref1 : useRef(null),
+    progressfillref: useRef(null),
+    alertfillref: useRef(null),
+    roperef : useRef(null),
+    coverref: useRef(null),
+    chairref1 : useRef(null),
+    chairref2 : useRef(null),
+    chairref3 : useRef(null),
+    npcref : useRef(null),
+    NPC1pressE : useRef(false),
+    npcpoliceref : useRef(null),
+    npcsetref : useRef(null),
+    celldoorref : useRef(null),
+    sleepref : useRef(null),
+    buildingdoorref : useRef(null)
+  };
+
+  const inventory = [];
+
+  const [intro, setIntro] = useState(true);
+  const [pause, setPause] = useState(false);
+  const pauseRef = useRef(false);
+  const [interialtimer , setinterialtimer] = useState(30);
+  const [phase, setPhase] = useState('night');
+  const timerRef = useRef(null);
+  useEffect(() => { pauseRef.current = pause || intro; timerRef.current = interialtimer; }, [pause, interialtimer, intro]);
+
+  const [items, setItems] = useState<string[]>([]);
+  const itemsref = useRef([]);
+  itemsref.current = items;
+
+    const [chatStep, setChatStep] = useState(-1);
+    refs.NPC1pressE.current = chatStep >= 0;
+    const [npcList, setNpcList] = useState(false);
+    refs.NPC1pressE.current = chatStep >= 0 || npcList;
+    const [dealerStock, setDealerStock] = useState<string[]>(() => initialStock(getDealer(1)));
+
+    useEffect(() => {
+      const next = () => {
+        if (pauseRef.current) return;
+        setChatStep((s) => (s < 0 || STOPS.includes(s + 1) ? -1 : s + 1));
+      };
+      window.addEventListener('click', next);
+      return () => window.removeEventListener('click', next);
+    }, []);
+
+
+      
+      
+
+      const morningDone = useRef(false);
+      useEffect(() => {
+        if (new URLSearchParams(window.location.search).get('continue') === '1') { setIntro(false); morningDone.current = true; }
+      }, []);
+      useEffect(() => {
+        if (phase === 'day' && !morningDone.current) { morningDone.current = true; setChatStep(INTRO.length + TALK.length); }
+      }, [phase]);
+
+      const talk = (v) => setChatStep(v === 0 ? INTRO.length : v); // E at night replays only the cellmate talk
+      useVRGameLoop(refs, itemsref, setItems, pauseRef, timerRef, setPause, setinterialtimer, talk, setPhase, setNpcList);
+  
+  return (
+    <div style={{ width: '100vw', height: '100vh', position: 'fixed', top: 0, left: 0 }}>
+      <MainComponents
+        walkref={refs.walkref}
+        camref={refs.camref}
+        inventoryref={refs.inventoryref}
+        landref={refs.landref}
+        chooseref = {refs.chooseref}
+        solidbarref = {refs.solidbarref}
+        solidbarref1 = {refs.solidbarref1}
+        solidbarref2 = {refs.solidbarref2}
+        rasptool = {refs.rasptool}
+        brokensolidref = {refs.brokensolidref}
+        brokensolidref1 = {refs.brokensolidref1}
+        roperef = {refs.roperef}
+        coverref={refs.coverref}
+        chairref1 = {refs.chairref1}
+        chairref2 = {refs.chairref2}
+        chairref3 = {refs.chairref3}
+        npcref = {refs.npcref}
+        npcpoliceref = {refs.npcpoliceref}
+        npcsetref = {refs.npcsetref}
+        celldoorref = {refs.celldoorref}
+        sleepref = {refs.sleepref}
+        buildingdoorref = {refs.buildingdoorref}
+        />
+
+      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 5, background: '#1b2a6b', mixBlendMode: 'multiply', opacity: phase === 'night' ? 0.8 : 0, transition: 'opacity 2s' }} />
+
+      {/*----------------------aim templer-----------------*/}
+      <Aim />
+
+      {/*----------------------NPC Chat-----------------*/}
+      {chatStep >= 0 && <NpcChat sentence={SENTENCES[chatStep]} />}
+
+      {/*---------------------Thermometer for actions----------------*/}
+      <Thermometer fillref={refs.progressfillref} color="#2ecc71" label="Progress" left={20} />
+      <Thermometer fillref={refs.alertfillref} color="#e74c3c" label="Alert" left={90} />
+
+      <Timer interialtimer = {interialtimer} phase = {phase} />
+      
+      {/*---------------------inventory--------------------*/}
+      <div id = "inventory-container" ref = {refs.inventoryref}>
+      {items.map((url , index) => {
+        return <img key = {index} id = {`box-${index}`} src={url} alt="" />;
+      })}
+      </div>
+
+      {/*----------------trade list------------------------*/}
+      {npcList && (
+        <Dealer
+          dealerId={1}
+          items={items}
+          setItems={setItems}
+          stock={dealerStock}
+          setStock={setDealerStock}
+          onClose={() => refs.saveRef.current?.closeList()}
+        />
+      )}
+
+      {/*---------------------pause--------------------*/}
+      <Menu
+        pausevalue={pause}
+        onContinue={() => setPause(false)}
+        onSave={() => refs.saveRef.current?.save()}
+        onLoad={() => refs.saveRef.current?.load()}
+      />
+
+      {intro && <Intro onDone={() => { setIntro(false); setTimeout(() => setChatStep(0), 400); }} />}
+    </div>
+  );
 }
 </file>
 

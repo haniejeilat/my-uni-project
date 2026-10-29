@@ -1,0 +1,23 @@
+{
+  "intro": [
+    "Howdy, I'm Gustave. I ended up behind these bars because I rode with a pack of trash fellas as bad as myself—bastards, thieves, killers.",
+    "I'm used to the smell of rust, and this shit is my home now.",
+    "But I got some news, and something broke inside me. My mother is about to die, and I want to see her one last time to say sorry.",
+    "I must find a way to leave this shit."
+  ],
+  "talk": [
+    "Cellmate: You're awful quiet today, Gustave... What's the matter, big guy? Thinking about offing yourself and save the hangman some trouble?",
+    "Gustave: STFU... I'm just— I ain't...",
+    "Gustave: It's my mother. She's about to die, and I wanna see her one last time to say sorry. So I'm breaking out of here.",
+    "Cellmate: Mm... I see. I know a guy who knows a guy called Dealer. He could help you find some tools, based on your approach. What do you think? (Engineer / Dealer / Miner)",
+    "Gustave: Dealer. That sounds like the right guy.",
+    "Cellmate: Yeah, big guy, that's a great idea. I'll introduce you to him tomorrow. Maybe you'll find something to use on those bars."
+  ],
+  "morning": [
+    "Cellmate: Howdy, Dealer. I want to introduce you to my good friend, Gustave.",
+    "Dealer: Hey, Gustave. Nice to meet you.",
+    "Gustave: Nice to meet you.",
+    "Cellmate: He might need some tools in the next few days, and you can trust him—he's like a brother to me.",
+    "Dealer: Of course, we can sort something out... but everything has a price. Check my list."
+  ]
+}
